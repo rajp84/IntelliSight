@@ -1,0 +1,16 @@
+import { Routes } from '@angular/router';
+import { ThingsComponent } from './features/things/things.component';
+import { LibraryComponent } from './features/library/library.component';
+import { ResultsComponent } from './features/results/results.component';
+import { AnalyzeComponent } from './features/analyze/analyze.component';
+import { ConfigurationComponent } from './features/configuration/configuration.component';
+import { TrainerComponent } from './features/trainer/trainer.component';
+
+export const routes: Routes = [
+  { path: 'things', component: ThingsComponent },
+  { path: 'library', component: LibraryComponent },
+  { path: 'results', component: ResultsComponent },
+  { path: 'analyze', component: AnalyzeComponent },
+  { path: 'configuration', component: ConfigurationComponent },
+  { path: 'trainer', component: TrainerComponent },
+];

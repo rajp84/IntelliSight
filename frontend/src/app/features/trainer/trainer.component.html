@@ -1,0 +1,25 @@
+<div class="p-4">
+  <div class="text-sm text-gray-700 mb-2">Training Preview</div>
+  <div class="border rounded-md p-2 bg-gray-50 flex items-start justify-between min-h-64">
+    <div class="flex items-center justify-start">
+      <ng-container *ngIf="frameSrc; else waiting">
+        <img [src]="frameSrc" alt="training frame" class="max-w-full max-w-[512px] max-h-[70vh] w-auto h-auto rounded" />
+      </ng-container>
+      <ng-template #waiting>
+        <div class="text-sm text-gray-500">Waiting for frames...</div>
+      </ng-template>
+    </div>
+    <div class="ml-4 text-xs text-gray-600 flex flex-col items-end gap-2">
+      <span *ngIf="fps !== null">FPS: {{ fps }}</span>
+      <span *ngIf="qDetect !== null">Detect Queue: {{ qDetect }}/{{ qDetectMax || 0 }}</span>
+      <span *ngIf="qResults !== null">Results Queue: {{ qResults }}</span>
+    </div>
+  </div>
+
+  <div class="mt-4">
+    <div class="text-sm text-gray-700 mb-2">Logs</div>
+    <div #logContainer class="border rounded-md bg-black text-green-200 text-xs p-2 h-48 overflow-y-auto whitespace-pre-wrap">
+      <div *ngFor="let m of logs">{{ m }}</div>
+    </div>
+  </div>
+</div>

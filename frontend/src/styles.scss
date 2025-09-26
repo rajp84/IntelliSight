@@ -1,0 +1,7 @@
+@use 'assets/styles/_layout' as *;
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* global vendor CSS moved to angular.json styles */

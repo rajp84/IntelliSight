@@ -1,0 +1,107 @@
+<div class="h-screen grid grid-rows-[1fr_auto] bg-gray-50 overflow-x-hidden">
+  <div class="flex min-h-0 relative overflow-hidden">
+    <aside class="w-14 shrink-0 border-r border-gray-200 bg-white overflow-y-auto z-10">
+      <div class="p-2 pt-4 flex justify-center">
+        <img src="assets/images/pixit-p-logo.svg" alt="Pixit" class="w-8 h-auto" />
+      </div>
+      <nav class="p-2 space-y-4 flex flex-col items-center relative">
+        <a routerLink="/things" routerLinkActive="!border-2 !border-blue-500" #rlaThings="routerLinkActive" class="group relative flex items-center justify-center w-8 h-8 rounded-full hover:bg-gray-100 border border-transparent" aria-label="Things"
+           (mouseenter)="showTooltip($event, 'Things')" (mouseleave)="hideTooltip()">
+          <div class="rounded-full bg-gray-200 flex items-center justify-center" [class.w-7]="rlaThings.isActive" [class.h-7]="rlaThings.isActive" [class.w-8]="!rlaThings.isActive" [class.h-8]="!rlaThings.isActive">
+            <i class="bx bx-area text-gray-700 text-[20px]"></i>
+          </div>
+        </a>
+        <a routerLink="/library" routerLinkActive="!border-2 !border-blue-500" #rlaLibrary="routerLinkActive" class="group relative flex items-center justify-center w-8 h-8 rounded-full hover:bg-gray-100 border border-transparent" aria-label="Library"
+           (mouseenter)="showTooltip($event, 'Library')" (mouseleave)="hideTooltip()">
+          <div class="rounded-full bg-gray-200 flex items-center justify-center" [class.w-7]="rlaLibrary.isActive" [class.h-7]="rlaLibrary.isActive" [class.w-8]="!rlaLibrary.isActive" [class.h-8]="!rlaLibrary.isActive">
+            <i class="bx bx-video text-gray-700 text-[20px]"></i>
+          </div>
+        </a>
+        <a routerLink="/results" routerLinkActive="!border-2 !border-blue-500" #rlaResults="routerLinkActive" class="group relative flex items-center justify-center w-8 h-8 rounded-full hover:bg-gray-100 border border-transparent" aria-label="Results"
+           (mouseenter)="showTooltip($event, 'Results')" (mouseleave)="hideTooltip()">
+          <div class="rounded-full bg-gray-200 flex items-center justify-center" [class.w-7]="rlaResults.isActive" [class.h-7]="rlaResults.isActive" [class.w-8]="!rlaResults.isActive" [class.h-8]="!rlaResults.isActive">
+            <i class="bx bx-bar-chart-alt-2 text-gray-700 text-[20px]"></i>
+          </div>
+        </a>
+        <a routerLink="/analyze" routerLinkActive="!border-2 !border-blue-500" #rlaAnalyze="routerLinkActive" class="group relative flex items-center justify-center w-8 h-8 rounded-full hover:bg-gray-100 border border-transparent" aria-label="Analyze"
+           (mouseenter)="showTooltip($event, 'Analyze')" (mouseleave)="hideTooltip()">
+          <div class="rounded-full bg-gray-200 flex items-center justify-center" [class.w-7]="rlaAnalyze.isActive" [class.h-7]="rlaAnalyze.isActive" [class.w-8]="!rlaAnalyze.isActive" [class.h-8]="!rlaAnalyze.isActive">
+            <i class="bx bx-search-alt-2 text-gray-700 text-[20px]"></i>
+          </div>
+        </a>
+        <a routerLink="/configuration" routerLinkActive="!border-2 !border-blue-500" #rlaConfig="routerLinkActive" class="group relative flex items-center justify-center w-8 h-8 rounded-full hover:bg-gray-100 border border-transparent" aria-label="Configuration"
+           (mouseenter)="showTooltip($event, 'Configuration')" (mouseleave)="hideTooltip()">
+          <div class="rounded-full bg-gray-200 flex items-center justify-center" [class.w-7]="rlaConfig.isActive" [class.h-7]="rlaConfig.isActive" [class.w-8]="!rlaConfig.isActive" [class.h-8]="!rlaConfig.isActive">
+            <i class="bx bx-cog text-gray-700 text-[20px]"></i>
+          </div>
+        </a>
+
+        <div *ngIf="tooltipVisible" class="pointer-events-none fixed z-50 -translate-y-1/2" [style.top.px]="tooltipTop" [style.left.px]="tooltipLeft">
+          <div class="relative rounded-md bg-gray-900 px-2 py-1 text-xs text-white">
+            {{ tooltipText }}
+            <span class="absolute -left-1 top-1/2 -translate-y-1/2 h-2 w-2 rotate-45 bg-gray-900"></span>
+          </div>
+        </div>
+      </nav>
+    </aside>
+
+    <div class="flex-1 min-w-0 flex flex-col min-h-0 overflow-hidden">
+      <header class="sticky top-0 z-40 bg-white/80 backdrop-blur border-b border-gray-200">
+        <div class="px-4 sm:px-2 lg:px-4 h-16 flex items-center">
+          <div class="flex items-center gap-2">
+            <img src="assets/images/pixit-logo-black.svg" alt="Pixit" class="w-[135px] h-auto" />
+          </div>
+          <div class="flex items-center gap-4 ml-auto">
+            <div class="hidden md:flex items-center gap-3 text-xs text-gray-600">
+              <span class="inline-flex items-center gap-1"><i class="bx bx-chip"></i> {{ cpuLabel }}</span>
+              <span class="inline-flex items-center gap-1"><i class="bx bx-memory-card"></i> {{ memLabel }}</span>
+              <span class="inline-flex items-center gap-1"><i class="bx bx-hdd"></i> {{ diskLabel }}</span>
+              <ng-container *ngFor="let gl of gpuLabels">
+                <span class="inline-flex items-center gap-1"><i class="bx bx-cpu"></i> {{ gl }}</span>
+              </ng-container>
+            </div>
+            <div class="flex items-center space-x-2"><span class="ml-4 text-xs text-gray-500 dark:text-gray-400">v 0.1.0</span><span class="text-[10px] uppercase tracking-wide bg-blue-100 text-blue-700 border border-blue-200 rounded px-1.5 py-0.5">beta</span></div>
+            <div class="h-8 w-8 rounded-full bg-gray-300 flex items-center justify-center text-sm font-semibold text-gray-700">A</div>
+            <span class="text-sm text-gray-700">Administrator</span>
+    </div>
+      </div>
+      </header>
+
+      <main class="flex-1 min-h-0 overflow-y-auto">
+        <div class="mx-auto p-6">
+          <router-outlet></router-outlet>
+      </div>
+      </main>
+    </div>
+  </div>
+
+  <footer class="border-t border-gray-200 bg-white">
+    <div class="mx-auto px-4 sm:px-6 lg:px-8 h-12 flex items-center justify-between text-sm text-gray-500">
+      <div class="flex items-center gap-3 min-w-0" *ngIf="trainingFooter as tf">
+        <span class="text-gray-600 shrink-0">Training: {{ tf.state }}</span>
+        <span class="w-40 h-2 bg-gray-200 rounded overflow-hidden shrink-0">
+          <span class="block h-full bg-blue-600" [style.width.%]="tf.progress"></span>
+        </span>
+        <span class="text-gray-500" *ngIf="tf.fps">FPS: {{ tf.fps }}</span>
+        <span class="text-gray-500" *ngIf="tf.queue_detect !== undefined">DQ: {{ tf.queue_detect }}/{{ tf.queue_detect_max || 0 }}</span>
+        <span class="text-gray-500" *ngIf="tf.queue_results !== undefined">RQ: {{ tf.queue_results }}</span>
+        <span class="text-gray-400 truncate" *ngIf="tf.message">{{ tf.message }}</span>
+      </div>
+      <div class="pl-4 flex items-center gap-2">
+        <ng-container *ngIf="trainingFooter?.state === 'running'; else idleBadge">
+          <a *ngIf="trainingThumb" routerLink="/trainer" class="inline-flex items-center flex-shrink-0">
+            <img [src]="trainingThumb" alt="preview" class="w-10 h-10 object-cover rounded border border-gray-300" />
+          </a>
+          <a routerLink="/trainer" class="px-2 py-1 text-xs rounded bg-blue-600 text-white hover:bg-blue-700">Preview</a>
+          <button class="px-2 py-1 text-xs rounded bg-red-600 text-white hover:bg-red-700 disabled:opacity-50"
+                  (click)="terminate()" [disabled]="terminating">
+            {{ terminating ? 'Terminating…' : 'Terminate' }}
+          </button>
+        </ng-container>
+        <ng-template #idleBadge>
+          <span class="px-2 py-0.5 text-xs rounded bg-gray-100 text-gray-700 border border-gray-200">Idle</span>
+        </ng-template>
+      </div>
+    </div>
+  </footer>
+</div>
