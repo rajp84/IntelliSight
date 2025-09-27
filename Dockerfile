@@ -8,12 +8,12 @@ COPY frontend/ .
 RUN npm run build -- --configuration production
 
 # Python backend
-FROM python:3.11-slim AS backend
+FROM --platform=linux/amd64 832471001844.dkr.ecr.us-east-1.amazonaws.com/aiplus/base:ubuntu22.04-cuda11.8-trt8.6.0 AS backend
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    tini && \
+    tini cuda-toolkit-12-1 && \
     rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
@@ -22,11 +22,18 @@ WORKDIR /app
 COPY backend/requirements/requirements.txt ./backend/requirements/requirements.txt
 RUN pip install --no-cache-dir -r backend/requirements/requirements.txt
 
+RUN pip install /usr/local/TensorRT-8.6.0.12/python/tensorrt-8.6.0-cp310-none-linux_x86_64.whl
+
 # Copy backend code
 COPY backend/app ./backend/app
 
 # Copy Angular build output into /app/backend/static
 COPY --from=frontend-build /app/dist/frontend/browser /app/backend/static
+
+# Set PYTHONPATH to include the backend directory
+ENV PYTHONPATH=/app/backend
+
+RUN mkdir -p /app/media
 
 # Expose and run
 EXPOSE 5001

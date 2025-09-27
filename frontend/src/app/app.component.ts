@@ -3,10 +3,12 @@ import { NgIf, NgFor } from '@angular/common';
 import { RouterOutlet, RouterLink, RouterLinkActive } from '@angular/router';
 import { SocketService } from './core/services/socket.service';
 import { SystemService } from './core/services/system.service';
+import { TrainingService } from './core/services/training.service';
+import { SplashComponent } from './features/splash/splash.component';
 
 @Component({
   selector: 'app-root',
-  imports: [RouterOutlet, RouterLink, RouterLinkActive, NgIf, NgFor],
+  imports: [RouterOutlet, RouterLink, RouterLinkActive, NgIf, NgFor, SplashComponent],
   templateUrl: './app.component.html',
   styleUrl: './app.component.scss'
 })
@@ -17,20 +19,22 @@ export class AppComponent implements OnInit {
   tooltipText = '';
   tooltipTop = 0;
   tooltipLeft = 0;
+  mobileMenuOpen = false;
 
   cpuLabel = '';
   memLabel = '';
   diskLabel = '';
   gpuLabels: string[] = [];
   trainingThumb: string | null = null;
-  trainingFooter: { state: string; progress: number; message?: string; queue_detect?: number; queue_detect_max?: number; queue_results?: number; fps?: number } | null = null;
+  trainingFooter: { state: string; progress: number; message?: string; queue_detect?: number; queue_detect_max?: number; queue_results?: number; queue_embed?: number; queue_embed_max?: number; fps?: number } | null = null;
   terminating = false;
 
   showTooltip(event: MouseEvent, text: string): void {
     const target = event.currentTarget as HTMLElement;
     const rect = target.getBoundingClientRect();
-    this.tooltipTop = rect.top + rect.height / 2 - 16;
-    this.tooltipLeft = rect.right + 4; // account for arrow overhang so tip touches icon
+    // Position relative to viewport, not sidebar
+    this.tooltipTop = rect.top + rect.height / 2;
+    this.tooltipLeft = rect.right + 8; // account for arrow overhang so tip touches icon
     this.tooltipText = text;
     this.tooltipVisible = true;
   }
@@ -39,8 +43,17 @@ export class AppComponent implements OnInit {
     this.tooltipVisible = false;
   }
 
+  toggleMobileMenu(): void {
+    this.mobileMenuOpen = !this.mobileMenuOpen;
+  }
+
+  closeMobileMenu(): void {
+    this.mobileMenuOpen = false;
+  }
+
   constructor(private readonly socketService: SocketService,
-              private readonly system: SystemService) {
+              private readonly system: SystemService,
+              private readonly training: TrainingService) {
     this.socketService.connect();
   }
 
@@ -79,6 +92,8 @@ export class AppComponent implements OnInit {
         queue_detect: t?.queue_detect,
         queue_detect_max: t?.queue_detect_max,
         queue_results: t?.queue_results,
+        queue_embed: t?.queue_embed,
+        queue_embed_max: t?.queue_embed_max,
         fps: t?.fps
       };
       const st = this.trainingFooter.state;
@@ -102,7 +117,7 @@ export class AppComponent implements OnInit {
     });
 
     // Sync initial state in case training is already running when UI loads
-    this.system.getTrainingStatus().subscribe({
+    this.training.getTrainingStatus().subscribe({
       next: (t: any) => {
         this.trainingFooter = {
           state: t?.state ?? 'idle',
@@ -111,6 +126,8 @@ export class AppComponent implements OnInit {
           queue_detect: t?.queue_detect,
           queue_detect_max: t?.queue_detect_max,
           queue_results: t?.queue_results,
+          queue_embed: t?.queue_embed,
+          queue_embed_max: t?.queue_embed_max,
           fps: t?.fps
         };
         const st = this.trainingFooter.state;
@@ -129,7 +146,7 @@ export class AppComponent implements OnInit {
   terminate(): void {
     if (this.terminating) return;
     this.terminating = true;
-    this.system.terminateTraining().subscribe({
+    this.training.terminateTraining().subscribe({
       next: () => {},
       error: () => { this.terminating = false; }
     });

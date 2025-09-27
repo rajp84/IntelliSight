@@ -1,0 +1,112 @@
+# build Angular frontend
+FROM node:20-alpine AS frontend-build
+WORKDIR /app
+COPY frontend/package*.json ./
+RUN npm ci
+COPY frontend/ .
+
+RUN npm run build -- --configuration production
+
+# Python backend
+FROM nvidia/cuda:11.8.0-runtime-ubuntu22.04 AS backend
+
+# Set environment variables
+ENV DEBIAN_FRONTEND=noninteractive
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1
+ENV LD_LIBRARY_PATH=/usr/local/lib:$LD_LIBRARY_PATH
+
+# Update and install dependencies
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    wget \
+    curl \
+    unzip \
+    ffmpeg \
+    libgl1-mesa-glx \
+    libglib2.0-0 \
+    ca-certificates \
+    software-properties-common \
+    build-essential \
+    zlib1g-dev \
+    libffi-dev \
+    libssl-dev \
+    libbz2-dev \
+    libreadline-dev \
+    libsqlite3-dev \
+    libncursesw5-dev \
+    xz-utils \
+    libxml2-dev \
+    libxmlsec1-dev \
+    liblzma-dev \
+    cuda-toolkit-12-1 \
+    tini \
+    && rm -rf /var/lib/apt/lists/*
+
+# Install Python 3.10.16
+WORKDIR /tmp
+RUN wget https://www.python.org/ftp/python/3.10.16/Python-3.10.16.tgz && \
+    tar xvf Python-3.10.16.tgz && \
+    cd Python-3.10.16 && \
+    ./configure --enable-optimizations --with-ensurepip=install && \
+    make -j$(nproc) && \
+    make altinstall && \
+    cd .. && \
+    rm -rf Python-3.10.16 Python-3.10.16.tgz
+
+# Set python3.10 as the default
+RUN update-alternatives --install /usr/bin/python3 python3 /usr/local/bin/python3.10 1 && \
+    update-alternatives --config python3
+
+# Upgrade pip
+RUN python3 -m pip install --upgrade pip
+
+# Install cuDNN 8.6.0 for CUDA 11.8
+WORKDIR /tmp
+RUN wget https://developer.download.nvidia.com/compute/cudnn/redist/cudnn/linux-x86_64/cudnn-linux-x86_64-8.6.0.163_cuda11-archive.tar.xz && \
+    tar -xvJf cudnn-linux-x86_64-8.6.0.163_cuda11-archive.tar.xz && \
+    cp -P cudnn-linux-x86_64-8.6.0.163_cuda11-archive/include/* /usr/local/include/ && \
+    cp -P cudnn-linux-x86_64-8.6.0.163_cuda11-archive/lib/* /usr/local/lib/ && \
+    ldconfig && \
+    rm -rf cudnn-linux-x86_64-8.6.0.163_cuda11-archive.tar.xz cudnn-linux-x86_64-8.6.0.163_cuda11-archive
+
+# Install TensorRT 8.6.0 for CUDA 11.8
+WORKDIR /tmp
+RUN wget https://developer.nvidia.com/downloads/compute/machine-learning/tensorrt/secure/8.6.0/tars/TensorRT-8.6.0.12.Linux.x86_64-gnu.cuda-11.8.tar.gz && \
+    tar -xvzf TensorRT-8.6.0.12.Linux.x86_64-gnu.cuda-11.8.tar.gz -C /usr/local/ && \
+    # Copy .so files
+    cp -P /usr/local/TensorRT-8.6.0.12/lib/*.so* /usr/lib/x86_64-linux-gnu/ && \
+    # Copy stubs directory
+    cp -r /usr/local/TensorRT-8.6.0.12/lib/stubs /usr/lib/x86_64-linux-gnu/ && \
+    cp -r /usr/local/TensorRT-8.6.0.12/include/* /usr/include/ && \
+    python3 -m pip install /usr/local/TensorRT-8.6.0.12/python/tensorrt-8.6.0-cp310-none-linux_x86_64.whl && \
+    ldconfig && \
+    rm -rf TensorRT-8.6.0.12.Linux.x86_64-gnu.cuda-11.8.tar.gz
+    
+
+WORKDIR /app
+
+# Install backend deps
+COPY backend/requirements/requirements.txt ./backend/requirements/requirements.txt
+RUN pip install --no-cache-dir -r backend/requirements/requirements.txt
+
+# Uninstall any existing onnxruntime
+RUN python3 -m pip uninstall -y onnxruntime onnxruntime-gpu
+
+# Install the correct onnxruntime-gpu version
+RUN python3 -m pip install onnxruntime-gpu==1.16.3
+
+# Copy backend code
+COPY backend/app ./backend/app
+
+# Copy Angular build output into /app/backend/static
+COPY --from=frontend-build /app/dist/frontend/browser /app/backend/static
+
+# Set PYTHONPATH to include the backend directory
+ENV PYTHONPATH=/app/backend
+
+RUN mkdir -p /app/media
+
+# Expose and run
+EXPOSE 5001
+ENTRYPOINT ["/usr/bin/tini", "--"]
+CMD ["uvicorn", "backend.app.main:app", "--host", "0.0.0.0", "--port", "5001"]

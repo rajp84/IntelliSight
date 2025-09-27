@@ -5,8 +5,8 @@ import asyncio
 import psutil
 try:
     import GPUtil
-except Exception:  # pragma: no cover
-    GPUtil = None  # type: ignore
+except Exception: 
+    GPUtil = None 
 
 from ..socket.socket_manager import broadcast
 
@@ -34,7 +34,39 @@ _DEFAULT_TRAINING_PARAMS: Dict[str, Any] = {
 _DEFAULT_CONFIG: Dict[str, Any] = {
     "library_path": "/",
     "training_params": _DEFAULT_TRAINING_PARAMS,
+    "library_file_extensions": "jpg,jpeg,png,gif,webp,svg,bmp,tiff,mp4,avi,mov,wmv,flv,webm,mkv,mp3,wav,flac,aac,ogg,m4a",
+    "hf_token": "",
+    "florence_model": "microsoft/Florence-2-large",
+    "dinov3_model": "facebook/dinov3-vitb16-pretrain-lvd1689m",
+    "dinov3_dimension": 768,
 }
+
+
+def get_dinov3_dimension(model_id: str) -> int:
+    """Get the embedding dimension for a given DINOv3 model ID."""
+    # ViT backbones
+    if "vits16" in model_id:
+        return 384
+    elif "vitb16" in model_id:
+        return 768
+    elif "vitl16" in model_id:
+        return 1024
+    elif "vith16plus" in model_id:
+        return 1280
+    elif "vit7b16" in model_id:
+        return 4096
+    # ConvNeXt backbones
+    elif "convnext-tiny" in model_id:
+        return 384
+    elif "convnext-small" in model_id:
+        return 512
+    elif "convnext-base" in model_id:
+        return 1024
+    elif "convnext-large" in model_id:
+        return 1536
+    else:
+        # Default fallback
+        return 768
 
 
 def _ensure_collection() -> None:
@@ -47,8 +79,13 @@ def get_configuration() -> Dict[str, Any]:
     _ensure_collection()
     doc = find_one(COLLECTION_NAME, DOCUMENT_ID)
     if not doc:
-        # No config yet; return defaults
-        return dict(_DEFAULT_CONFIG)
+        # No config yet; return defaults with environment variable fallback
+        config = dict(_DEFAULT_CONFIG)
+        # Check for Hugging Face token in environment variables
+        import os
+        if os.environ.get("HUGGINGFACE_HUB_TOKEN"):
+            config["hf_token"] = os.environ.get("HUGGINGFACE_HUB_TOKEN")
+        return config
     doc.pop("_id", None)
     # Backward compatibility: if flat training fields exist, fold them into training_params
     if "training_params" not in doc:
@@ -56,15 +93,45 @@ def get_configuration() -> Dict[str, Any]:
         for k, dv in _DEFAULT_TRAINING_PARAMS.items():
             tp[k] = doc.get(k, dv)
         # Keep library_path at top-level
+        # Auto-determine DINOv3 dimension based on selected model
+        dinov3_model = doc.get("dinov3_model", _DEFAULT_CONFIG["dinov3_model"])
+        dinov3_dimension = get_dinov3_dimension(dinov3_model)
+        
+        # Check for Hugging Face token in environment variables as fallback
+        import os
+        hf_token = doc.get("hf_token", _DEFAULT_CONFIG["hf_token"])
+        if not hf_token and os.environ.get("HUGGINGFACE_HUB_TOKEN"):
+            hf_token = os.environ.get("HUGGINGFACE_HUB_TOKEN")
+        
         return {
             "library_path": doc.get("library_path", "/"),
+            "library_file_extensions": doc.get("library_file_extensions", _DEFAULT_CONFIG["library_file_extensions"]),
+            "hf_token": hf_token,
+            "florence_model": doc.get("florence_model", _DEFAULT_CONFIG["florence_model"]),
+            "dinov3_model": dinov3_model,
+            "dinov3_dimension": dinov3_dimension,
             "training_params": tp,
         }
     # Ensure defaults for missing nested fields
     merged_tp: Dict[str, Any] = dict(_DEFAULT_TRAINING_PARAMS)
     merged_tp.update(doc.get("training_params", {}))
+    # Auto-determine DINOv3 dimension based on selected model
+    dinov3_model = doc.get("dinov3_model", _DEFAULT_CONFIG["dinov3_model"])
+    dinov3_dimension = get_dinov3_dimension(dinov3_model)
+    
+    # Check for Hugging Face token in environment variables as fallback
+    import os
+    hf_token = doc.get("hf_token", _DEFAULT_CONFIG["hf_token"])
+    if not hf_token and os.environ.get("HUGGINGFACE_HUB_TOKEN"):
+        hf_token = os.environ.get("HUGGINGFACE_HUB_TOKEN")
+    
     return {
         "library_path": doc.get("library_path", "/"),
+        "library_file_extensions": doc.get("library_file_extensions", _DEFAULT_CONFIG["library_file_extensions"]),
+        "hf_token": hf_token,
+        "florence_model": doc.get("florence_model", _DEFAULT_CONFIG["florence_model"]),
+        "dinov3_model": dinov3_model,
+        "dinov3_dimension": dinov3_dimension,
         "training_params": merged_tp,
     }
 

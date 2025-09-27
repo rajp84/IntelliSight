@@ -1,9 +1,10 @@
-<div class="p-4">
+<div class="p-1">
+  <h2 class="text-lg font-semibold text-gray-900 mb-4">Trainer</h2>
   <div class="text-sm text-gray-700 mb-2">Training Preview</div>
   <div class="border rounded-md p-2 bg-gray-50 flex items-start justify-between min-h-64">
     <div class="flex items-center justify-start">
       <ng-container *ngIf="frameSrc; else waiting">
-        <img [src]="frameSrc" alt="training frame" class="max-w-full max-w-[512px] max-h-[70vh] w-auto h-auto rounded" />
+        <img [src]="frameSrc" alt="training frame" class="max-w-full max-w-[512px] max-h-[40vh] w-auto h-auto rounded" />
       </ng-container>
       <ng-template #waiting>
         <div class="text-sm text-gray-500">Waiting for frames...</div>
@@ -13,6 +14,7 @@
       <span *ngIf="fps !== null">FPS: {{ fps }}</span>
       <span *ngIf="qDetect !== null">Detect Queue: {{ qDetect }}/{{ qDetectMax || 0 }}</span>
       <span *ngIf="qResults !== null">Results Queue: {{ qResults }}</span>
+      <span *ngIf="qEmbed !== null">Embed Queue: {{ qEmbed }}/{{ qEmbedMax || 0 }}</span>
     </div>
   </div>
 
@@ -20,6 +22,48 @@
     <div class="text-sm text-gray-700 mb-2">Logs</div>
     <div #logContainer class="border rounded-md bg-black text-green-200 text-xs p-2 h-48 overflow-y-auto whitespace-pre-wrap">
       <div *ngFor="let m of logs">{{ m }}</div>
+    </div>
+  </div>
+</div>
+
+<!-- Training Completion Modal -->
+<div *ngIf="showCompletionModal" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+  <div class="bg-white rounded-lg p-6 max-w-md w-full mx-4">
+    <div class="flex items-center justify-between mb-4">
+      <h3 class="text-lg font-semibold text-gray-900">Training Complete</h3>
+      <button (click)="closeCompletionModal()" class="text-gray-400 hover:text-gray-600">
+        <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
+        </svg>
+      </button>
+    </div>
+    
+    <div class="mb-4">
+      <div class="flex items-center mb-2">
+        <div class="w-3 h-3 rounded-full mr-2" [class]="trainingStatus === 'completed' ? 'bg-green-500' : 'bg-red-500'"></div>
+        <span class="text-sm font-medium text-gray-900">
+          {{ trainingStatus === 'completed' ? 'Training Completed Successfully' : 'Training Failed' }}
+        </span>
+      </div>
+      <p class="text-sm text-gray-600">
+        {{ trainingStatus === 'completed' ? 'The training run has finished processing.' : 'The training run encountered an error.' }}
+      </p>
+    </div>
+
+    <div *ngIf="trainingId" class="mb-4 p-3 bg-gray-50 rounded-md">
+      <p class="text-xs text-gray-600 mb-1">Training ID:</p>
+      <p class="text-sm font-mono text-gray-900">{{ trainingId }}</p>
+    </div>
+
+    <div class="flex justify-end space-x-3">
+      <button (click)="closeCompletionModal()" 
+              class="px-4 py-2 text-sm font-medium text-gray-700 bg-gray-100 border border-gray-300 rounded-md hover:bg-gray-200 focus:outline-none focus:ring-2 focus:ring-gray-500">
+        Close
+      </button>
+      <button *ngIf="trainingId" (click)="goToResults()" 
+              class="px-4 py-2 text-sm font-medium text-white bg-blue-600 border border-transparent rounded-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500">
+        View Results
+      </button>
     </div>
   </div>
 </div>

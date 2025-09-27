@@ -23,7 +23,7 @@ def _to_model_dtype_on_device(batch, model, device: str):
     return batch
 
 
-def load_florence(model_id: str = "microsoft/Florence-2-large", device: Optional[str] = None, dtype_mode: Optional[str] = None) -> tuple[AutoProcessor, AutoModelForCausalLM, str]:
+def load_florence(model_id: str = "microsoft/Florence-2-large", device: Optional[str] = None, dtype_mode: Optional[str] = None, hf_token: Optional[str] = None) -> tuple[AutoProcessor, AutoModelForCausalLM, str]:
     global _MODEL_CACHE
     if device is None:
         device = "cuda" if torch.cuda.is_available() else "cpu"
@@ -31,7 +31,15 @@ def load_florence(model_id: str = "microsoft/Florence-2-large", device: Optional
     if cache_key in _MODEL_CACHE:
         return _MODEL_CACHE[cache_key]
 
-    processor = AutoProcessor.from_pretrained(model_id, trust_remote_code=True)
+    # Configure HF token if provided
+    if hf_token and not os.environ.get("HUGGINGFACE_HUB_TOKEN"):
+        os.environ["HUGGINGFACE_HUB_TOKEN"] = hf_token
+
+    processor = AutoProcessor.from_pretrained(
+        model_id,
+        trust_remote_code=True,
+        token=hf_token if hf_token else None,
+    )
     # Map dtype_mode → torch dtype
     if dtype_mode in ("float16", "fp16"):
         dtype = torch.float16
@@ -47,6 +55,7 @@ def load_florence(model_id: str = "microsoft/Florence-2-large", device: Optional
         dtype=dtype,
         low_cpu_mem_usage=True,
         attn_implementation="eager",
+        token=hf_token if hf_token else None,
     ).to(device).eval()
 
     eos_id = getattr(processor.tokenizer, "eos_token_id", None)
@@ -89,8 +98,14 @@ def run_florence_od_batch(
     images_pil: List[Image.Image],
     device: str,
     max_new_tokens: int = 96,
+    prompts: Optional[List[str]] = None,
 ) -> List[dict]:
-    prompts = ["<OD>"] * len(images_pil)
+    if prompts is None:
+        prompts = ["<OD>"] * len(images_pil)
+    else:
+        # Ensure prompts list matches images list length
+        if len(prompts) != len(images_pil):
+            prompts = [prompts[0]] * len(images_pil)
     inputs = processor(text=prompts, images=images_pil, return_tensors="pt", padding=True)
     inputs = _to_model_dtype_on_device(inputs, model, device)
     generated_ids = model.generate(

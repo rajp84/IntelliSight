@@ -15,11 +15,17 @@ export interface TrainingParams {
   score_threshold?: number;
   interpolate_boxes?: boolean;
   dtype_mode?: 'auto' | 'float16' | 'float32' | 'bfloat16';
+  embedding_batch_size?: number;
 }
 
 export interface SystemConfig {
   library_path: string;
   training_params: TrainingParams;
+  library_file_extensions: string;
+  hf_token?: string | null;
+  florence_model: string;
+  dinov3_model: string;
+  dinov3_dimension: number;
 }
 
 @Injectable({
@@ -27,7 +33,6 @@ export interface SystemConfig {
 })
 export class SystemService {
   private readonly baseUrl = '/api/system';
-  private readonly trainUrl = '/api/train';
   private readonly configSubject = new BehaviorSubject<SystemConfig | null>(null);
   readonly config$ = this.configSubject.asObservable();
 
@@ -65,16 +70,29 @@ export class SystemService {
     return url.toString();
   }
 
-  // ------- Training APIs -------
-  startTraining(payload: { path: string; mosaic?: boolean; extra_args?: any }) {
-    return this.http.post<{ status: string }>(`${this.trainUrl}`, payload);
+  uploadLibraryFile(file: File, path: string = ''): Observable<{ status: string; filename: string; path: string; size: number }> {
+    const formData = new FormData();
+    formData.append('file', file);
+    
+    const params = path ? { params: { path } } : {};
+    return this.http.post<{ status: string; filename: string; path: string; size: number }>(
+      `${this.baseUrl}/library/upload`, 
+      formData, 
+      { ...params, reportProgress: false }
+    );
   }
 
-  getTrainingStatus() {
-    return this.http.get<any>(`${this.trainUrl}/status`);
+  createLibraryFolder(name: string, path: string = ''): Observable<{ status: string; message: string; path: string }> {
+    const params = { 
+      name,
+      ...(path ? { path } : {})
+    };
+    return this.http.post<{ status: string; message: string; path: string }>(
+      `${this.baseUrl}/library/folder`, 
+      null,
+      { params }
+    );
   }
 
-  terminateTraining() {
-    return this.http.post<any>(`${this.trainUrl}/terminate`, {});
-  }
+  // Training APIs were moved to TrainingService
 }

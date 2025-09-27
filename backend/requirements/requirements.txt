@@ -8,6 +8,7 @@ psutil>=5.9
 gputil>=1.4.0
 pymilvus>=2.4.0
 pymongo>=4.7.0
+python-multipart>=0.0.9
 
 
 # Training Stuff
@@ -20,7 +21,7 @@ filterpy
 huggingface-hub
 
 pycuda==2024.1
-transformers>=4.45.2
+transformers>=4.56.0.dev0
 accelerate>=1.0.0
 pillow>=10.3.0
 safetensors
@@ -35,3 +36,5 @@ onnxruntime-gpu==1.16.3
 
 scikit-image
 matplotlib
+
+minio>=7.2.7

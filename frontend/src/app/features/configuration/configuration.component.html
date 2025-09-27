@@ -1,22 +1,74 @@
-<div class="max-w-xl">
+<div class="p-1 max-w-6xl">
   <h2 class="text-lg font-semibold text-gray-900 mb-4">Configuration</h2>
 
   <div *ngIf="errorMessage" class="mb-3 text-sm text-red-600">{{ errorMessage }}</div>
   <div *ngIf="successMessage" class="mb-3 text-sm text-green-600">{{ successMessage }}</div>
 
   <form (ngSubmit)="save()" class="space-y-6">
-    <div class="border border-gray-200 rounded-md p-4 bg-white">
-      <h3 class="text-sm font-semibold text-gray-900 mb-3">Application Config</h3>
-      <div>
-        <label class="block text-sm font-medium text-gray-700 mb-1">Library Path</label>
-        <input type="text" [(ngModel)]="config.library_path" name="library_path"
-               class="block w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-               placeholder="/path/to/library" />
+    <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+      <div class="border border-gray-200 rounded-md p-4 bg-white">
+        <h3 class="text-sm font-semibold text-gray-900 mb-3">Application Config</h3>
+        <div class="space-y-4">
+          <div>
+            <label class="block text-sm font-medium text-gray-700 mb-1">Library Path</label>
+            <input type="text" [(ngModel)]="config.library_path" name="library_path"
+                   class="block w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                   placeholder="/path/to/library" />
+          </div>
+          <div>
+            <label class="block text-sm font-medium text-gray-700 mb-1">File Extensions Filter</label>
+            <input type="text" [(ngModel)]="config.library_file_extensions" name="library_file_extensions"
+                   class="block w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                   placeholder="jpg,jpeg,png,gif,mp4,avi" />
+            <p class="mt-1 text-xs text-gray-500">Comma-separated list of file extensions to show in library browser (case insensitive)</p>
+          </div>
+          <div>
+            <label class="block text-sm font-medium text-gray-700 mb-1">Hugging Face Token</label>
+            <input type="password" [(ngModel)]="config.hf_token" name="hf_token"
+                   class="block w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                   placeholder="hf_..." />
+            <p class="mt-1 text-xs text-gray-500">Token used to access gated/private models on Hugging Face. Stored in backend config.</p>
+          </div>
+          <div>
+            <label class="block text-sm font-medium text-gray-700 mb-1">Florence-2 Model</label>
+            <select [(ngModel)]="config.florence_model" name="florence_model"
+                    class="block w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500">
+              <option value="microsoft/Florence-2-large">microsoft/Florence-2-large (Large, Accurate)</option>
+              <option value="microsoft/Florence-2-large-ft">microsoft/Florence-2-large-ft (Large, Fine-tuned)</option>
+            </select>
+            <p class="mt-1 text-xs text-gray-500">Object detection and captioning model</p>
+          </div>
+          <div>
+            <label class="block text-sm font-medium text-gray-700 mb-1">DINOv3 Model</label>
+            <select [(ngModel)]="config.dinov3_model" name="dinov3_model" (change)="onDinov3ModelChange()"
+                    class="block w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500">
+              <option value="facebook/dinov3-vits16-pretrain-lvd1689m">facebook/dinov3-vits16-pretrain-lvd1689m (Small, Fast)</option>
+              <option value="facebook/dinov3-vits16plus-pretrain-lvd1689m">facebook/dinov3-vits16plus-pretrain-lvd1689m (Small+, Fast)</option>
+              <option value="facebook/dinov3-vitb16-pretrain-lvd1689m">facebook/dinov3-vitb16-pretrain-lvd1689m (Medium, Balanced)</option>
+              <option value="facebook/dinov3-vitl16-pretrain-lvd1689m">facebook/dinov3-vitl16-pretrain-lvd1689m (Large, Accurate)</option>
+              <option value="facebook/dinov3-vith16plus-pretrain-lvd1689m">facebook/dinov3-vith16plus-pretrain-lvd1689m (Huge+, Most Accurate)</option>
+              <option value="facebook/dinov3-vit7b16-pretrain-lvd1689m">facebook/dinov3-vit7b16-pretrain-lvd1689m (7B, Very Large)</option>
+              <option value="facebook/dinov3-convnext-base-pretrain-lvd1689m">facebook/dinov3-convnext-base-pretrain-lvd1689m (ConvNeXt Base)</option>
+              <option value="facebook/dinov3-convnext-large-pretrain-lvd1689m">facebook/dinov3-convnext-large-pretrain-lvd1689m (ConvNeXt Large)</option>
+              <option value="facebook/dinov3-convnext-small-pretrain-lvd1689m">facebook/dinov3-convnext-small-pretrain-lvd1689m (ConvNeXt Small)</option>
+              <option value="facebook/dinov3-convnext-tiny-pretrain-lvd1689m">facebook/dinov3-convnext-tiny-pretrain-lvd1689m (ConvNeXt Tiny)</option>
+              <option value="facebook/dinov3-vitl16-pretrain-sat493m">facebook/dinov3-vitl16-pretrain-sat493m (Large, Satellite)</option>
+              <option value="facebook/dinov3-vit7b16-pretrain-sat493m">facebook/dinov3-vit7b16-pretrain-sat493m (7B, Satellite)</option>
+            </select>
+            <p class="mt-1 text-xs text-gray-500">Image embedding model for similarity search</p>
+          </div>
+          <div>
+            <label class="block text-sm font-medium text-gray-700 mb-1">DINOv3 Embedding Dimension</label>
+            <input type="number" [(ngModel)]="config.dinov3_dimension" name="dinov3_dimension" readonly
+                   class="block w-full rounded-md border border-gray-300 px-3 py-2 text-sm bg-gray-50 text-gray-600"
+                   placeholder="Auto-determined from model" />
+            <p class="mt-1 text-xs text-gray-500">Automatically determined from the selected DINOv3 model</p>
+          </div>
+        </div>
       </div>
-    </div>
 
-    <div class="border border-gray-200 rounded-md p-4 bg-white">
-      <h3 class="text-sm font-semibold text-gray-900 mb-3">Training Parameters</h3>
+      <div class="border border-gray-200 rounded-md p-4 bg-white">
+        <h3 class="text-sm font-semibold text-gray-900 mb-3">Training Parameters</h3>
       <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
       <div>
         <label class="block text-sm font-medium text-gray-700 mb-1">Resize Width</label>
@@ -25,8 +77,13 @@
                placeholder="0 = original" />
       </div>
       <div>
-        <label class="block text-sm font-medium text-gray-700 mb-1">Batch Size</label>
+        <label class="block text-sm font-medium text-gray-700 mb-1">Detector Batch Size</label>
         <input type="number" [(ngModel)]="config.training_params.batch_size" name="batch_size"
+               class="block w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500" />
+      </div>
+      <div>
+        <label class="block text-sm font-medium text-gray-700 mb-1">Embedding Batch Size</label>
+        <input type="number" [(ngModel)]="config.training_params.embedding_batch_size" name="embedding_batch_size"
                class="block w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500" />
       </div>
       <div>
@@ -85,6 +142,7 @@
           <option value="float32">Float32 (fp32)</option>
           <option value="bfloat16">BFloat16 (bf16)</option>
         </select>
+      </div>
       </div>
       </div>
     </div>

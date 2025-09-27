@@ -1,25 +1,68 @@
-<div class="flex items-center justify-between mb-3">
-  <div class="text-sm text-gray-600">
-    <ng-container *ngIf="currentPath; else rootLabel">
-      <ng-container *ngFor="let seg of currentPath.split('/'); let i = index">
-        <button class="text-blue-600 hover:underline" (click)="load(currentPath.split('/').slice(0, i + 1).join('/'))">{{ seg }}</button>
-        <span *ngIf="i < currentPath.split('/').length - 1" class="text-gray-400"> / </span>
+<div class="p-1">
+  <h2 class="text-lg font-semibold text-gray-900 mb-4">My Library</h2>
+  <div class="flex flex-col sm:flex-row sm:items-center justify-between mb-3 gap-3">
+    <div class="text-sm text-gray-600">
+      <button class="text-sm text-blue-600 hover:underline me-2" (click)="up()" [disabled]="!currentPath">Up one level</button>
+      <ng-container *ngIf="currentPath; else rootLabel">
+        <ng-container *ngFor="let seg of currentPath.split('/'); let i = index">
+          <button class="text-blue-600 hover:underline" (click)="load(currentPath.split('/').slice(0, i + 1).join('/'))">{{ seg }}</button>
+          <span *ngIf="i < currentPath.split('/').length - 1" class="text-gray-400"> / </span>
+        </ng-container>
       </ng-container>
-    </ng-container>
-    <ng-template #rootLabel>
-      <span>/</span>
-    </ng-template>
-  </div>
-  <div class="flex items-center gap-3">
-    <button class="text-sm text-blue-600 hover:underline" (click)="up()" [disabled]="!currentPath">Up one level</button>
-    <button class="text-sm text-blue-600 hover:underline" (click)="load('')">Root</button>
+      <ng-template #rootLabel>
+        <span>/</span>
+      </ng-template>
+    </div>
+    <div class="flex items-center gap-3">
+      <button class="text-sm text-blue-600 hover:underline" (click)="load('')">Root</button>
+      <button class="text-sm text-green-600 hover:underline flex items-center" (click)="openUploadModal()">
+      <svg class="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12"></path>
+      </svg>
+      Upload File
+    </button>
+    <button class="text-sm text-blue-600 hover:underline flex items-center" (click)="openCreateFolderModal()">
+      <svg class="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6v6m0 0v6m0-6h6m-6 0H6"></path>
+      </svg>
+      New Folder
+    </button>
   </div>
 </div>
 
 <div *ngIf="loading" class="text-sm text-gray-500">Loading...</div>
 <div *ngIf="error" class="text-sm text-red-600">{{ error }}</div>
 
-<div class="grid grid-cols-1 lg:grid-cols-3 gap-4">
+<!-- Global Upload Progress -->
+<div *ngIf="isUploading && !showUploadModal" class="mb-4 p-3 bg-blue-50 border border-blue-200 rounded-md">
+  <div class="flex items-center justify-between text-sm text-blue-700 mb-2">
+    <span>Uploading {{ selectedFile?.name }}...</span>
+    <span>{{ uploadProgress }}%</span>
+  </div>
+  <div class="w-full bg-blue-200 rounded-full h-2">
+    <div class="bg-blue-600 h-2 rounded-full transition-all duration-300" [style.width.%]="uploadProgress"></div>
+  </div>
+</div>
+
+<div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 relative"
+     (dragenter)="onDragEnter($event)"
+     (dragleave)="onDragLeave($event)"
+     (dragover)="onDragOver($event)"
+     (drop)="onDrop($event)"
+     [class.drag-over]="isDragOver">
+  
+  <!-- Drag and Drop Overlay -->
+  <div *ngIf="isDragOver" 
+       class="absolute inset-0 z-10 bg-blue-50 border-2 border-dashed border-blue-400 rounded-lg flex items-center justify-center">
+    <div class="text-center">
+      <svg class="mx-auto h-12 w-12 text-blue-400 mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12"></path>
+      </svg>
+      <p class="text-lg font-medium text-blue-600">Drop files here to upload</p>
+      <p class="text-sm text-blue-500">Files will be uploaded to: {{ currentPath || '/' }}</p>
+    </div>
+  </div>
+
   <ul class="divide-y divide-gray-200 rounded-md border border-gray-200 lg:col-span-2">
     <li *ngFor="let e of entries" class="px-3 py-2 flex items-center gap-2 hover:bg-gray-50 cursor-pointer" (click)="open(e)">
       <span class="inline-flex items-center justify-center w-5 h-5 rounded text-gray-600">
@@ -38,10 +81,139 @@
       <video *ngSwitchCase="'video'" [src]="previewUrl" controls class="w-full max-h-80 rounded"></video>
       <div *ngSwitchDefault class="text-sm text-gray-500">No preview available.</div>
     </ng-container>
-    <div class="mt-3">
+    <div class="mt-3 space-y-2">
       <button class="inline-flex items-center px-3 py-1.5 rounded-md text-sm bg-green-600 text-white hover:bg-green-700 disabled:opacity-50"
               (click)="startTraining()" [disabled]="trainingState==='running'">
-        Train
+        Auto Detection
+      </button>
+      <button class="inline-flex items-center ms-2 px-3 py-1.5 rounded-md text-sm bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-50"
+              (click)="openGroundingModal()" [disabled]="trainingState==='running'">
+        Phrase Grounding Detection
+      </button>
+      <button class="inline-flex items-center ms-2 px-3 py-1.5 rounded-md text-sm bg-purple-600 text-white hover:bg-purple-700 disabled:opacity-50"
+              (click)="startDenseCaptionTraining()" [disabled]="trainingState==='running'">
+        Dense Region Caption
+      </button>
+    </div>
+  </div>
+</div>
+
+<!-- Grounding Detection Modal -->
+<div *ngIf="showGroundingModal" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+  <div class="bg-white rounded-lg p-6 w-full max-w-md mx-4">
+    <h3 class="text-lg font-semibold text-gray-900 mb-4">Parse Grounding Detection</h3>
+    <div class="mb-4">
+      <label class="block text-sm font-medium text-gray-700 mb-2">Grounding Phrase</label>
+      <input 
+        type="text" 
+        [(ngModel)]="groundingPhrase" 
+        placeholder="Enter the phrase to ground in the image"
+        class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+        (keyup.enter)="startGroundingTraining()"
+      />
+    </div>
+    <div class="flex justify-end space-x-3">
+      <button 
+        class="px-4 py-2 text-sm font-medium text-gray-700 bg-gray-100 hover:bg-gray-200 rounded-md"
+        (click)="closeGroundingModal()"
+      >
+        Cancel
+      </button>
+      <button 
+        class="px-4 py-2 text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 rounded-md disabled:opacity-50"
+        (click)="startGroundingTraining()"
+        [disabled]="!groundingPhrase.trim()"
+      >
+        Start
+      </button>
+    </div>
+  </div>
+</div>
+
+<!-- Upload File Modal -->
+<div *ngIf="showUploadModal" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+  <div class="bg-white rounded-lg p-6 w-full max-w-md mx-4">
+    <h3 class="text-lg font-semibold text-gray-900 mb-4">Upload File</h3>
+    <div class="mb-4">
+      <label class="block text-sm font-medium text-gray-700 mb-2">Select File</label>
+      <input 
+        type="file" 
+        (change)="onFileSelected($event)"
+        class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+        [disabled]="isUploading"
+      />
+      <p class="text-xs text-gray-500 mt-1">Upload to: {{ currentPath || '/' }}</p>
+    </div>
+    
+    <!-- Upload Progress -->
+    <div *ngIf="isUploading" class="mb-4">
+      <div class="flex items-center justify-between text-sm text-gray-600 mb-1">
+        <span>Uploading...</span>
+        <span>{{ uploadProgress }}%</span>
+      </div>
+      <div class="w-full bg-gray-200 rounded-full h-2">
+        <div class="bg-blue-600 h-2 rounded-full transition-all duration-300" [style.width.%]="uploadProgress"></div>
+      </div>
+    </div>
+    
+    <div class="flex justify-end space-x-3">
+      <button 
+        class="px-4 py-2 text-sm font-medium text-gray-700 bg-gray-100 hover:bg-gray-200 rounded-md"
+        (click)="closeUploadModal()"
+        [disabled]="isUploading"
+      >
+        Cancel
+      </button>
+      <button 
+        class="px-4 py-2 text-sm font-medium text-white bg-green-600 hover:bg-green-700 rounded-md disabled:opacity-50 flex items-center"
+        (click)="uploadFile()"
+        [disabled]="!selectedFile || isUploading"
+      >
+        <svg *ngIf="isUploading" class="animate-spin -ml-1 mr-2 h-4 w-4 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+          <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+          <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+        </svg>
+        {{ isUploading ? 'Uploading...' : 'Upload' }}
+      </button>
+    </div>
+  </div>
+</div>
+
+<!-- Create Folder Modal -->
+<div *ngIf="showCreateFolderModal" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+  <div class="bg-white rounded-lg p-6 w-full max-w-md mx-4">
+    <h3 class="text-lg font-semibold text-gray-900 mb-4">Create New Folder</h3>
+    <div class="mb-4">
+      <label class="block text-sm font-medium text-gray-700 mb-2">Folder Name</label>
+      <input 
+        type="text" 
+        [(ngModel)]="newFolderName"
+        (keyup.enter)="createFolder()"
+        class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+        placeholder="Enter folder name"
+        [disabled]="isCreatingFolder"
+      />
+      <p class="text-xs text-gray-500 mt-1">Create in: {{ currentPath || '/' }}</p>
+    </div>
+    
+    <div class="flex justify-end space-x-3">
+      <button 
+        class="px-4 py-2 text-sm font-medium text-gray-700 bg-gray-100 hover:bg-gray-200 rounded-md"
+        (click)="closeCreateFolderModal()"
+        [disabled]="isCreatingFolder"
+      >
+        Cancel
+      </button>
+      <button 
+        class="px-4 py-2 text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 rounded-md disabled:opacity-50 flex items-center"
+        (click)="createFolder()"
+        [disabled]="!newFolderName || isCreatingFolder"
+      >
+        <svg *ngIf="isCreatingFolder" class="animate-spin -ml-1 mr-2 h-4 w-4 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+          <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+          <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+        </svg>
+        {{ isCreatingFolder ? 'Creating...' : 'Create Folder' }}
       </button>
     </div>
   </div>

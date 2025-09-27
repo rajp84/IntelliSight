@@ -1,58 +1,82 @@
+<!-- Splash Screen -->
+<app-splash></app-splash>
+
 <div class="h-screen grid grid-rows-[1fr_auto] bg-gray-50 overflow-x-hidden">
   <div class="flex min-h-0 relative overflow-hidden">
-    <aside class="w-14 shrink-0 border-r border-gray-200 bg-white overflow-y-auto z-10">
+    
+    <!-- Sidebar -->
+    <aside class="w-14 lg:w-14 shrink-0 border-r border-gray-200 bg-white overflow-y-auto z-50 lg:z-10 transform transition-transform duration-300 ease-in-out"
+           [class.-translate-x-full]="!mobileMenuOpen"
+           [class.translate-x-0]="mobileMenuOpen"
+           [class.fixed]="true"
+           [class.lg:relative]="true"
+           [class.lg:translate-x-0]="true">
       <div class="p-2 pt-4 flex justify-center">
         <img src="assets/images/pixit-p-logo.svg" alt="Pixit" class="w-8 h-auto" />
       </div>
       <nav class="p-2 space-y-4 flex flex-col items-center relative">
         <a routerLink="/things" routerLinkActive="!border-2 !border-blue-500" #rlaThings="routerLinkActive" class="group relative flex items-center justify-center w-8 h-8 rounded-full hover:bg-gray-100 border border-transparent" aria-label="Things"
-           (mouseenter)="showTooltip($event, 'Things')" (mouseleave)="hideTooltip()">
+           (mouseenter)="showTooltip($event, 'Things')" (mouseleave)="hideTooltip()" (click)="closeMobileMenu()">
           <div class="rounded-full bg-gray-200 flex items-center justify-center" [class.w-7]="rlaThings.isActive" [class.h-7]="rlaThings.isActive" [class.w-8]="!rlaThings.isActive" [class.h-8]="!rlaThings.isActive">
             <i class="bx bx-area text-gray-700 text-[20px]"></i>
           </div>
         </a>
         <a routerLink="/library" routerLinkActive="!border-2 !border-blue-500" #rlaLibrary="routerLinkActive" class="group relative flex items-center justify-center w-8 h-8 rounded-full hover:bg-gray-100 border border-transparent" aria-label="Library"
-           (mouseenter)="showTooltip($event, 'Library')" (mouseleave)="hideTooltip()">
+           (mouseenter)="showTooltip($event, 'Library')" (mouseleave)="hideTooltip()" (click)="closeMobileMenu()">
           <div class="rounded-full bg-gray-200 flex items-center justify-center" [class.w-7]="rlaLibrary.isActive" [class.h-7]="rlaLibrary.isActive" [class.w-8]="!rlaLibrary.isActive" [class.h-8]="!rlaLibrary.isActive">
             <i class="bx bx-video text-gray-700 text-[20px]"></i>
           </div>
         </a>
         <a routerLink="/results" routerLinkActive="!border-2 !border-blue-500" #rlaResults="routerLinkActive" class="group relative flex items-center justify-center w-8 h-8 rounded-full hover:bg-gray-100 border border-transparent" aria-label="Results"
-           (mouseenter)="showTooltip($event, 'Results')" (mouseleave)="hideTooltip()">
+           (mouseenter)="showTooltip($event, 'Results')" (mouseleave)="hideTooltip()" (click)="closeMobileMenu()">
           <div class="rounded-full bg-gray-200 flex items-center justify-center" [class.w-7]="rlaResults.isActive" [class.h-7]="rlaResults.isActive" [class.w-8]="!rlaResults.isActive" [class.h-8]="!rlaResults.isActive">
             <i class="bx bx-bar-chart-alt-2 text-gray-700 text-[20px]"></i>
           </div>
         </a>
         <a routerLink="/analyze" routerLinkActive="!border-2 !border-blue-500" #rlaAnalyze="routerLinkActive" class="group relative flex items-center justify-center w-8 h-8 rounded-full hover:bg-gray-100 border border-transparent" aria-label="Analyze"
-           (mouseenter)="showTooltip($event, 'Analyze')" (mouseleave)="hideTooltip()">
+           (mouseenter)="showTooltip($event, 'Analyze')" (mouseleave)="hideTooltip()" (click)="closeMobileMenu()">
           <div class="rounded-full bg-gray-200 flex items-center justify-center" [class.w-7]="rlaAnalyze.isActive" [class.h-7]="rlaAnalyze.isActive" [class.w-8]="!rlaAnalyze.isActive" [class.h-8]="!rlaAnalyze.isActive">
             <i class="bx bx-search-alt-2 text-gray-700 text-[20px]"></i>
           </div>
         </a>
         <a routerLink="/configuration" routerLinkActive="!border-2 !border-blue-500" #rlaConfig="routerLinkActive" class="group relative flex items-center justify-center w-8 h-8 rounded-full hover:bg-gray-100 border border-transparent" aria-label="Configuration"
-           (mouseenter)="showTooltip($event, 'Configuration')" (mouseleave)="hideTooltip()">
+           (mouseenter)="showTooltip($event, 'Configuration')" (mouseleave)="hideTooltip()" (click)="closeMobileMenu()">
           <div class="rounded-full bg-gray-200 flex items-center justify-center" [class.w-7]="rlaConfig.isActive" [class.h-7]="rlaConfig.isActive" [class.w-8]="!rlaConfig.isActive" [class.h-8]="!rlaConfig.isActive">
             <i class="bx bx-cog text-gray-700 text-[20px]"></i>
           </div>
         </a>
-
-        <div *ngIf="tooltipVisible" class="pointer-events-none fixed z-50 -translate-y-1/2" [style.top.px]="tooltipTop" [style.left.px]="tooltipLeft">
-          <div class="relative rounded-md bg-gray-900 px-2 py-1 text-xs text-white">
-            {{ tooltipText }}
-            <span class="absolute -left-1 top-1/2 -translate-y-1/2 h-2 w-2 rotate-45 bg-gray-900"></span>
-          </div>
-        </div>
       </nav>
     </aside>
 
+    <!-- Tooltip - positioned outside sidebar to avoid overflow clipping -->
+    <div *ngIf="tooltipVisible" class="pointer-events-none fixed z-[9999] -translate-y-1/2" [style.top.px]="tooltipTop" [style.left.px]="tooltipLeft">
+      <div class="relative rounded-md bg-gray-900 px-2 py-1 text-xs text-white shadow-lg">
+        {{ tooltipText }}
+        <span class="absolute -left-1 top-1/2 -translate-y-1/2 h-2 w-2 rotate-45 bg-gray-900"></span>
+      </div>
+    </div>
+
+    <!-- Mobile overlay -->
+    <div *ngIf="mobileMenuOpen" 
+         class="lg:hidden fixed inset-0 bg-black bg-opacity-50 z-40" 
+         (click)="closeMobileMenu()">
+    </div>
+
     <div class="flex-1 min-w-0 flex flex-col min-h-0 overflow-hidden">
       <header class="sticky top-0 z-40 bg-white/80 backdrop-blur border-b border-gray-200">
-        <div class="px-4 sm:px-2 lg:px-4 h-16 flex items-center">
-          <div class="flex items-center gap-2">
-            <img src="assets/images/pixit-logo-black.svg" alt="Pixit" class="w-[135px] h-auto" />
+        <div class="px-2 sm:px-4 lg:px-4 h-16 flex items-center">
+          <div class="flex items-center gap-2 min-w-0">
+            <!-- Mobile menu button -->
+            <button class="lg:hidden p-2 bg-white rounded-md shadow-sm border border-gray-200 mr-2" (click)="toggleMobileMenu()">
+              <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16"></path>
+              </svg>
+            </button>
+            <img src="assets/images/pixit-logo-black.svg" alt="Pixit" class="w-24 sm:w-32 lg:w-[135px] h-auto" />
           </div>
-          <div class="flex items-center gap-4 ml-auto">
-            <div class="hidden md:flex items-center gap-3 text-xs text-gray-600">
+          <div class="flex items-center gap-2 sm:gap-4 ml-auto">
+            <!-- System stats - hidden on mobile -->
+            <div class="hidden lg:flex items-center gap-3 text-xs text-gray-600">
               <span class="inline-flex items-center gap-1"><i class="bx bx-chip"></i> {{ cpuLabel }}</span>
               <span class="inline-flex items-center gap-1"><i class="bx bx-memory-card"></i> {{ memLabel }}</span>
               <span class="inline-flex items-center gap-1"><i class="bx bx-hdd"></i> {{ diskLabel }}</span>
@@ -60,17 +84,26 @@
                 <span class="inline-flex items-center gap-1"><i class="bx bx-cpu"></i> {{ gl }}</span>
               </ng-container>
             </div>
-            <div class="flex items-center space-x-2"><span class="ml-4 text-xs text-gray-500 dark:text-gray-400">v 0.1.0</span><span class="text-[10px] uppercase tracking-wide bg-blue-100 text-blue-700 border border-blue-200 rounded px-1.5 py-0.5">beta</span></div>
-            <div class="h-8 w-8 rounded-full bg-gray-300 flex items-center justify-center text-sm font-semibold text-gray-700">A</div>
-            <span class="text-sm text-gray-700">Administrator</span>
-    </div>
-      </div>
+            
+            <!-- Version and beta badge -->
+            <div class="flex items-center space-x-1 sm:space-x-2">
+              <span class="hidden sm:inline text-xs text-gray-500">v 0.1.1</span>
+              <span class="text-[10px] uppercase tracking-wide bg-blue-100 text-blue-700 border border-blue-200 rounded px-1.5 py-0.5">beta</span>
+            </div>
+            
+            <!-- User info -->
+            <div class="flex items-center gap-2">
+              <div class="h-6 w-6 sm:h-8 sm:w-8 rounded-full bg-gray-300 flex items-center justify-center text-xs sm:text-sm font-semibold text-gray-700">A</div>
+              <span class="hidden sm:inline text-sm text-gray-700">Administrator</span>
+            </div>
+          </div>
+        </div>
       </header>
 
       <main class="flex-1 min-h-0 overflow-y-auto">
-        <div class="mx-auto p-6">
+        <div class="mx-auto p-2 sm:p-4 lg:p-6">
           <router-outlet></router-outlet>
-      </div>
+        </div>
       </main>
     </div>
   </div>
@@ -78,13 +111,14 @@
   <footer class="border-t border-gray-200 bg-white">
     <div class="mx-auto px-4 sm:px-6 lg:px-8 h-12 flex items-center justify-between text-sm text-gray-500">
       <div class="flex items-center gap-3 min-w-0" *ngIf="trainingFooter as tf">
-        <span class="text-gray-600 shrink-0">Training: {{ tf.state }}</span>
-        <span class="w-40 h-2 bg-gray-200 rounded overflow-hidden shrink-0">
+        <span class="text-gray-600 shrink-0" *ngIf="tf.state !== 'idle'">Training: {{ tf.state }}</span>
+        <span class="w-40 h-2 bg-gray-200 rounded overflow-hidden shrink-0" *ngIf="tf.state !== 'idle'">
           <span class="block h-full bg-blue-600" [style.width.%]="tf.progress"></span>
         </span>
         <span class="text-gray-500" *ngIf="tf.fps">FPS: {{ tf.fps }}</span>
         <span class="text-gray-500" *ngIf="tf.queue_detect !== undefined">DQ: {{ tf.queue_detect }}/{{ tf.queue_detect_max || 0 }}</span>
         <span class="text-gray-500" *ngIf="tf.queue_results !== undefined">RQ: {{ tf.queue_results }}</span>
+        <span class="text-gray-500" *ngIf="tf.queue_embed !== undefined">EQ: {{ tf.queue_embed }}/{{ tf.queue_embed_max || 0 }}</span>
         <span class="text-gray-400 truncate" *ngIf="tf.message">{{ tf.message }}</span>
       </div>
       <div class="pl-4 flex items-center gap-2">
@@ -104,4 +138,4 @@
       </div>
     </div>
   </footer>
-</div>
+  </div>
