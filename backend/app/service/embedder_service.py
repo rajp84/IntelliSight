@@ -1,7 +1,10 @@
 from __future__ import annotations
 
+import asyncio
 import threading
-from typing import Any, Iterable, List, Optional, Sequence, Tuple, Union
+import time
+from queue import Queue
+from typing import Any, Callable, Iterable, List, Optional, Sequence, Tuple, Union
 
 import numpy as np
 from PIL import Image
@@ -342,6 +345,97 @@ def preload_model(
         return False
 
 
+def enqueue_embeddings(
+    frame_index: int,
+    frame_bgr: np.ndarray,
+    boxes: List[Tuple[float, float, float, float]],
+    labels: List[str],
+    scores: List[float],
+    embed_queue: Queue,
+    score_threshold: float,
+    set_status_callback: Callable,
+    emit_log_callback: Callable,
+    tracks: Optional[List] = None
+) -> None:
+    """
+    Enqueue individual detections for embedding processing.
+    
+    Args:
+        frame_index: Index of the current frame
+        frame_bgr: BGR image array from OpenCV
+        boxes: List of bounding boxes (x1, y1, x2, y2)
+        labels: List of detection labels
+        scores: List of detection scores
+        embed_queue: Queue to put embedding items into
+        score_threshold: Minimum score threshold for detections
+        set_status_callback: Callback to update training status
+        emit_log_callback: Callback to emit log messages
+        tracks: Optional tracking information
+    """
+    try:
+        h, w = frame_bgr.shape[:2]
+        
+        # Process each detection individually to get correct crops
+        for i, b in enumerate(boxes or []):
+            # Apply score threshold to filter out low confidence detections
+            if scores and i < len(scores) and scores[i] < score_threshold:
+                continue
+            
+            # Extract bounding box coordinates (raw Florence-2 detections only)
+            # should be 4-element tuples: (x1, y1, x2, y2)
+            if isinstance(b, (list, tuple)) and len(b) >= 4:
+                x1, y1, x2, y2 = float(b[0]), float(b[1]), float(b[2]), float(b[3])
+            else:
+                # Skip bad boxes
+                continue
+            
+            # Clamp coordinates to image bounds
+            xi1 = max(0, min(w - 1, int(x1)))
+            yi1 = max(0, min(h - 1, int(y1)))
+            xi2 = max(0, min(w - 1, int(x2)))
+            yi2 = max(0, min(h - 1, int(y2)))
+            
+            # Skip invalid boxes
+            if xi2 <= xi1 or yi2 <= yi1:
+                continue
+            
+            # Extract individual crop for this detection
+            crop = frame_bgr[yi1:yi2, xi1:xi2]
+            
+            # Get label and score for this detection
+            label_txt = (labels[i] if labels and i < len(labels) else "object")
+            scr = (scores[i] if scores and i < len(scores) else 1.0)
+            
+            # Create item for this individual detection
+            unique_id = f"{frame_index}_{i}_{int(time.time() * 1000000)}"
+            item = {
+                "crop": crop, 
+                "label": label_txt, 
+                "score": float(scr), 
+                "bbox": (int(round(x1)), int(round(y1)), int(round(x2)), int(round(y2))), 
+                "track_id": None,  # No tracking for raw detections (we'll add it later... not working correctly yet)
+                "frame_index": frame_index,
+                "unique_id": unique_id
+            }
+            
+            # Enqueue this individual detection
+            try:
+                embed_queue.put_nowait(item)
+            except Exception as e:
+                emit_log_callback(f"Failed to enqueue embedding item: {e}")
+                break
+
+        # Update queue stats
+        try:
+            qe_now = embed_queue.qsize()
+            qemax_now = getattr(embed_queue, 'maxsize', 0) or 0
+            set_status_callback(queue_embed=qe_now, queue_embed_max=qemax_now)
+        except Exception:
+            pass
+    except Exception:
+        pass
+
+
 __all__ = [
     "load_dino",
     "embed_image",
@@ -349,6 +443,7 @@ __all__ = [
     "is_model_loaded",
     "get_loaded_model_info",
     "preload_model",
+    "enqueue_embeddings",
 ]
 
 

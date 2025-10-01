@@ -25,13 +25,7 @@ uvicorn app.main:app --reload --port 3001
 
 
 ### Setup TensorRT 8.6.1.6
-Download and extract to ~/TensorRT8.6.1.6
-
-then in your venv:
-
-```
-pip install ~/TensorRT-8.6.1.6/python/tensorrt-8.6.1-cp310-none-linux_x86_64.whl
-```
+See below to setup to run training
 
 ## Frontend
 ```
@@ -47,17 +41,6 @@ ng serve -o
 docker build -t intellisight:latest .
 docker run -d --name intellisight-app --network host --gpus all intellisight:latest
 ```
-
-
-
-
-
-
-
-
-
-
-
 
 
 

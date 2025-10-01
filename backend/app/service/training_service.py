@@ -17,9 +17,11 @@ import json
 from io import BytesIO
 from typing import Any, Dict, Optional
 from PIL import Image
+from functools import partial
 
 from queue import Queue, Empty, Full
-from ..utils.media_utils import make_mosaic_grid, image_to_base64_jpeg, draw_boxes_pil
+from ..utils.media_utils import make_mosaic_grid, image_to_base64_jpeg, draw_boxes_pil, create_detection_mosaic, split_mosaic_detections
+from ..workers.training_workers import embedding_worker, detection_worker, detection_prefetcher
 from .detector_service import load_detector_model, is_detector_loaded, get_detector_info, enable_detector_trt, detect_batch, detect_single, parse_detection_output, detect_and_parse, detect_single_and_parse, unload_detector
 from ..trackers.sort import Sort as BaseSort
 from .system_service import get_configuration
@@ -27,7 +29,7 @@ from .system_service import get_configuration
 from ..socket.socket_manager import broadcast
 from ..database.training_repo import create_training_record, mark_training_status, update_training_record, error_out_running_records
 from ..database.milvus import ensure_training_collection, insert_training_embeddings
-from ..service.embedder_service import embed_images, is_model_loaded, get_loaded_model_info, preload_model
+from ..service.embedder_service import embed_images, is_model_loaded, get_loaded_model_info, preload_model, enqueue_embeddings
 from ..storage.minio_client import put_training_image_bytes, ensure_training_bucket
 
 from app.service.embedder_service import preload_model
@@ -362,258 +364,19 @@ class _TrainingState:
                     worker_stop = threading.Event()
                     eof_event = threading.Event()  # end-of-video signal. we need this to flush partial mosaics
 
-                    # Emit frame for UI preview
-                    def _emit_frame_bgr(frame_index: int, frame_bgr, boxes=None, labels=None, scores=None):
-                        try:
+                    
 
-                            fb = frame_bgr.copy()
-                            b = boxes or []
-                            l = labels or []
-                            s = scores or []
-                            h, w = fb.shape[:2]
-                            for i, box in enumerate(b):
-                                if s and i < len(s) and s[i] < score_threshold:
-                                    continue
-                                # Support optional 5th element as track id
-                                if isinstance(box, (list, tuple)) and len(box) >= 5:
-                                    x1, y1, x2, y2, tid = box[0], box[1], box[2], box[3], box[4]
-                                else:
-                                    x1, y1, x2, y2 = box
-                                    tid = None
-                                x1 = int(max(0, min(w - 1, x1)))
-                                y1 = int(max(0, min(h - 1, y1)))
-                                x2 = int(max(0, min(w - 1, x2)))
-                                y2 = int(max(0, min(h - 1, y2)))
-                                cv2.rectangle(fb, (x1, y1), (x2, y2), (0, 255, 0), 2)
-                                label_txt = l[i] if i < len(l) else ""
-                                if tid is not None:
-                                    # Append tracker id when available
-                                    if label_txt:
-                                        label_txt = f"{label_txt} #{int(tid)}"
-                                    else:
-                                        label_txt = f"#{int(tid)}"
-                                score_val = s[i] if i < len(s) else None
-                                if label_txt or score_val is not None:
-                                    text = f"{label_txt}" if score_val is None else f"{label_txt} {score_val:.2f}"
-                                    (tw, th), _ = cv2.getTextSize(text, cv2.FONT_HERSHEY_SIMPLEX, 0.5, 1)
-                                    y_text = max(0, y1 - 6)
-                                    cv2.rectangle(fb, (x1, y_text - th - 4), (x1 + tw + 4, y_text), (0, 255, 0), -1)
-                                    cv2.putText(fb, text, (x1 + 2, y_text - 2), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 0), 1, cv2.LINE_AA)
-                            pil = Image.fromarray(fb[:, :, ::-1])
-                            b64 = image_to_base64_jpeg(pil)
 
-                            asyncio.run(broadcast("training_frame", {"index": frame_index, "image": b64}))
-                        except Exception:
-                            pass
-
-                    def _enqueue_embeddings(frame_index: int, frame_bgr, boxes, labels, scores, tracks=None):
-                        try:
-                            h, w = frame_bgr.shape[:2]
-                            
-                            # Process each detection individually to get correct crops
-                            for i, b in enumerate(boxes or []):
-
-                                # Apply score threshold to filter out low confidence detections
-                                if scores and i < len(scores) and scores[i] < score_threshold:
-                                    continue
-                                
-                                # Extract bounding box coordinates (raw Florence-2 detections only)
-                                # should be 4-element tuples: (x1, y1, x2, y2)
-                                if isinstance(b, (list, tuple)) and len(b) >= 4:
-                                    x1, y1, x2, y2 = float(b[0]), float(b[1]), float(b[2]), float(b[3])
-                                else:
-                                    # Skip bad boxes
-                                    continue
-                                
-                                # Clamp coordinates to image bounds
-                                xi1 = max(0, min(w - 1, int(x1)))
-                                yi1 = max(0, min(h - 1, int(y1)))
-                                xi2 = max(0, min(w - 1, int(x2)))
-                                yi2 = max(0, min(h - 1, int(y2)))
-                                
-                                # Skip invalid boxes
-                                if xi2 <= xi1 or yi2 <= yi1:
-                                    continue
-                                
-                                # Extract individual crop for this detection
-                                crop = frame_bgr[yi1:yi2, xi1:xi2]
-                                
-                                # Get label and score for this detection
-                                label_txt = (labels[i] if labels and i < len(labels) else "object")
-                                scr = (scores[i] if scores and i < len(scores) else 1.0)
-                                
-                                # Create item for this individual detection
-                                
-                                unique_id = f"{frame_index}_{i}_{int(time.time() * 1000000)}"
-                                item = {
-                                    "crop": crop, 
-                                    "label": label_txt, 
-                                    "score": float(scr), 
-                                    "bbox": (int(round(x1)), int(round(y1)), int(round(x2)), int(round(y2))), 
-                                    "track_id": None,  # No tracking for raw detections (we'll add it later... not working correctly yet)
-                                    "frame_index": frame_index,
-                                    "unique_id": unique_id
-                                }
-                                
-                                # Enqueue this individual detection
-                                try:
-                                    embed_queue.put_nowait(item)
-                                except Exception as e:
-                                    emit_log(f"Failed to enqueue embedding item: {e}")
-                                    break
-
-                            # Update queue stats
-                            try:
-                                qe_now = embed_queue.qsize()
-                                qemax_now = getattr(embed_queue, 'maxsize', 0) or 0
-                                self._set_status(queue_embed=qe_now, queue_embed_max=qemax_now)
-
-                                asyncio.run(broadcast("training_status", self.status()))
-                            except Exception:
-                                pass
-                        except Exception:
-                            pass
-
-                    def _embed_worker():
-                        try:
-
-                            # Init per-training bucket
-                            try:
-                                if training_doc_id is not None:
-                                    ensure_training_bucket(str(training_doc_id))
-                            except Exception:
-                                pass
-
-                            collection_inited = False
-                            batch_imgs = []
-                            batch_meta = []
-
-                            while not embed_stop.is_set() or not embed_queue.empty() or batch_imgs:
-
-                                # Fill up to embedding_batch_size
-                                if len(batch_imgs) < embedding_batch_size:
-                                    try:
-                                        item = embed_queue.get(timeout=0.1)
-                                        crop_bgr = item.get("crop")
-                                        if crop_bgr is None:
-                                            continue
-
-                                        # Convert BGR ndarray to PIL RGB
-                                        pil_img = Image.fromarray(crop_bgr[:, :, ::-1])
-                                        batch_imgs.append(pil_img)
-                                        batch_meta.append(item)
-                                        continue
-                                    except Exception:
-                                        pass
-
-                                if not batch_imgs:
-                                    continue
-
-                                # Update queue stats
-                                try:
-                                    qe_now = embed_queue.qsize()
-                                    qemax_now = getattr(embed_queue, 'maxsize', 0) or 0
-                                    self._set_status(queue_embed=qe_now, queue_embed_max=qemax_now)
-                                    asyncio.run(broadcast("training_status", self.status()))
-                                except Exception:
-                                    pass
-
-                                # Get embeddings (DINOv3)
-                                try:
-                                    embs = embed_images(batch_imgs, batch_size=embedding_batch_size, normalize=True)
-                                except Exception as _ex:
-                                    try:
-                                        emit_log(f"Embedder: embedding batch failed: {_ex}")
-                                    except Exception:
-                                        pass
-
-                                    batch_imgs.clear(); batch_meta.clear()
-                                    continue
-
-                                # try to init Milvus collection
-                                if not collection_inited:
-                                    try:
-                                        if training_doc_id is not None:
-                                            ensure_training_collection(str(training_doc_id), dim=int(embs.shape[1]))
-                                            try:
-                                                emit_log(f"Milvus: initialized training collection training_{training_doc_id} (dim {int(embs.shape[1])})")
-                                            except Exception:
-                                                pass
-                                        collection_inited = True
-                                    except Exception:
-                                        pass
-
-                                # insert                                
-                                payloads = []
-                                for i, m in enumerate(batch_meta):
-                                    payload = {
-                                        "label": m.get("label"),
-                                        "score": m.get("score"),
-                                        "bbox": m.get("bbox"),
-                                        "frame_index": m.get("frame_index"),
-                                        "track_id": m.get("track_id"),
-                                        "unique_id": m.get("unique_id"),
-                                        "image_id": str(uuid.uuid4()),
-                                    }
-                                    payloads.append(json.dumps(payload))
-                                
-                                try:
-                                    if training_doc_id is not None:
-                                        ids = insert_training_embeddings(str(training_doc_id), embs.tolist(), payloads)
-                                        try:
-                                            emit_log(f"Milvus: inserted {len(ids)} embeddings into training_{training_doc_id}")
-                                        except Exception:
-                                            pass
-                                    else:
-                                        ids = []
-                                except Exception as _ex:
-                                    try:
-                                        emit_log(f"Milvus: insert failed: {_ex}")
-                                    except Exception:
-                                        pass
-
-                                    batch_imgs.clear(); batch_meta.clear()
-                                    continue
-
-                                # Upload images to bucket named by image_id from payload
-                                if ids:
-                                    for idx, (mid, payload) in enumerate(zip(ids, payloads)):
-                                        try:
-                                            bio = BytesIO()
-                                            batch_imgs[idx].save(bio, format="JPEG", quality=90)
-                                            
-                                            # Parse payload to get image_id
-                                            payload_data = json.loads(payload)
-                                            image_id = payload_data.get("image_id")
-                                            
-                                            # Use image_id for filename
-                                            if image_id:
-                                                unique_filename = f"{image_id}.jpg"
-                                            else:
-                                                unique_filename = f"{training_doc_id}_{mid}.jpg"
-                                            
-                                            put_training_image_bytes(str(training_doc_id), unique_filename, bio.getvalue(), content_type="image/jpeg")
-                                        except Exception as _mx:
-                                            try:
-                                                emit_log(f"Failed to upload image for id {mid}: {_mx}")
-                                            except Exception:
-                                                pass
-                                            
-                                batch_imgs.clear()
-                                batch_meta.clear()
-
-                                # Update queue stats
-                                try:
-                                    qe_now2 = embed_queue.qsize()
-                                    qemax_now2 = getattr(embed_queue, 'maxsize', 0) or 0
-                                    self._set_status(queue_embed=qe_now2, queue_embed_max=qemax_now2)
-
-                                    asyncio.run(broadcast("training_status", self.status()))
-                                except Exception:
-                                    pass
-                        except Exception:
-                            # just keep going? (TODO: maybe we should stop the training)
-                            pass
+                    # Create worker function to handle embeddings
+                    _embed_worker = partial(
+                        embedding_worker,
+                        embed_queue=embed_queue,
+                        embed_stop=embed_stop,
+                        training_doc_id=training_doc_id,
+                        embedding_batch_size=embedding_batch_size,
+                        set_status_callback=self._set_status,
+                        emit_log_callback=emit_log
+                    )
 
                     # Attempt to enable/build TRT engine using ONLY the first frame to derive Florence pixel size
                     try:
@@ -678,158 +441,18 @@ class _TrainingState:
                         emit_log(f"TF32 enablement failed or unavailable: {e}")
 
                             # Start detection worker thread
-                    def _det_worker():
-                        try:
-                            staged: list[tuple[int, Image.Image]] = []
-                            while not worker_stop.is_set() or staged or not detect_queue.empty():
-                                # If termination requested, purge  immediately
-                                if self._should_stop():
-                                    staged = []
-                                    try:
-                                        while True:
-                                            try:
-                                                _ = detect_queue.get_nowait()
-                                                detect_queue.task_done()
-                                            except Empty:
-                                                break
-                                    except Exception:
-                                        pass
-                                    break
-                                # If end-of-video, flush any remaining frames without requiring full mosaic
-                                if eof_event.is_set():
-                                    # clear any remaining queued items
-                                    try:
-                                        while True:
-                                            try:
-                                                item = detect_queue.get_nowait()
-                                                staged.append(item)
-                                                detect_queue.task_done()
-                                            except Empty:
-                                                break
-                                    except Exception:
-                                        pass
-
-                                    if staged:
-                                        idxs = [i for (i, _) in staged]
-                                        imgs = [im for (_, im) in staged]
-                                        # Process in smaller batches to avoid ONNX batch size issues
-                                        batch_size = 1  # ONNX model expects batch size of 1
-                                        for i in range(0, len(imgs), batch_size):
-                                            batch_imgs = imgs[i:i + batch_size]
-                                            batch_idxs = idxs[i:i + batch_size]
-                                            outs = detect_batch(batch_imgs, [florence_prompt] * len(batch_imgs), max_new_tokens)
-                                            for j, od in enumerate(outs):
-                                                bxs, lbls, scs = parse_detection_output(od)
-                                                results_map[batch_idxs[j]] = (bxs, lbls, scs)
-                                        staged = []
-                                        continue
-                                    else:
-                                        # Nothing left
-                                        break
-
-                                # Mosaic parameters
-                                cfg_vals_worker = get_configuration()
-                                cols = max(1, int(cfg_vals_worker.get("mosaic_cols", 3)))
-                                cols = min(cols, 5)
-                                need = cols * cols
-
-                                # auto calculate tile scale
-                                default_scale = 0.5 if cols == 2 else (1.0 / max(1, cols))
-                                tile_scale = float(cfg_vals_worker.get("mosaic_tile_scale", default_scale))
-                                tile_scale = max(0.1, min(tile_scale, 1.0))
-
-                                # Fill up to cols*cols frames
-                                while len(staged) < need and not worker_stop.is_set():
-                                    try:
-                                        item = detect_queue.get(timeout=0.02)
-                                        staged.append(item)
-                                    except Empty:
-                                        break
-
-                                # if we have enough frames, build mosaic
-                                if len(staged) >= need:
-                                    group = staged[:need]
-                                    staged = staged[need:]
-                                    idxs = [i for (i, _) in group]
-                                    imgs = [im for (_, im) in group]
-                                    # Build mosaic scaled by tile_scale
-                                    base_w, base_h = imgs[0].width, imgs[0].height
-                                    tile_w = max(1, int(base_w * tile_scale))
-                                    tile_h = max(1, int(base_h * tile_scale))
-                                    
-                                    tiles = [im.resize((tile_w, tile_h), Image.BILINEAR) for im in imgs[:need]]
-                                    mosaic = Image.new('RGB', (tile_w * cols, tile_h * cols))
-                                    positions = [(c * tile_w, r * tile_h) for r in range(cols) for c in range(cols)]
-                                    for pos, timg in zip(positions, tiles):
-                                        mosaic.paste(timg, pos)
-                                    
-                                    # Run detection once on mosaic
-                                    outs = detect_batch([mosaic], [florence_prompt], max_new_tokens)
-                                    od = outs[0]
-                                    m_boxes, m_labels, m_scores = parse_detection_output(od)
-                                    if detection_debug:
-                                        try:
-                                            boxes_dbg = [(round(b[0],1), round(b[1],1), round(b[2],1), round(b[3],1)) for b in m_boxes][:20]
-                                            emit_log(f"[DEBUG] mosaic det: batch_idx=0 num_boxes={len(m_boxes)} labels_head={m_labels[:5]} boxes_head={boxes_dbg}")
-                                        except Exception:
-                                            emit_log(f"[DEBUG] mosaic det: batch_idx=0 num_boxes={len(m_boxes)} (boxes debug unavailable)")
-                                    
-                                    # Split back to  individual tiles and remap to original frame
-                                    per_boxes = [[] for _ in range(need)]
-                                    per_labels = [[] for _ in range(need)]
-                                    per_scores = [[] for _ in range(need)]
-                                    for b, l, s in zip(m_boxes, m_labels, m_scores):
-                                        x1, y1, x2, y2 = b
-                                        cx = 0.5 * (x1 + x2)
-                                        cy = 0.5 * (y1 + y2)
-                                        col = min(cols - 1, int(cx // tile_w))
-                                        row = min(cols - 1, int(cy // tile_h))
-                                        qi = row * cols + col
-                                        ox, oy = positions[qi]
-
-                                        # Scale back to original size
-                                        sx = 1.0 / float(tile_scale)
-                                        sy = 1.0 / float(tile_scale)
-                                        rx1 = (x1 - ox) * sx
-                                        ry1 = (y1 - oy) * sy
-                                        rx2 = (x2 - ox) * sx
-                                        ry2 = (y2 - oy) * sy
-                                        per_boxes[qi].append((rx1, ry1, rx2, ry2))
-                                        per_labels[qi].append(l)
-                                        per_scores[qi].append(s)
-
-                                    # Store results for each corresponding frame index
-                                    for k in range(need):
-                                        results_map[idxs[k]] = (per_boxes[k], per_labels[k], per_scores[k])
-                                    # Mark queue tasks done for the 9 frames
-                                    for _ in range(need):
-                                        detect_queue.task_done()
-                                    continue
-
-                                # If terminating and leftovers remain, process them directly
-                                if worker_stop.is_set() and staged:
-                                    idxs = [i for (i, _) in staged]
-                                    imgs = [im for (_, im) in staged]
-                                    # Process in smaller batches to avoid ONNX batch size issues
-                                    batch_size = 1  # ONNX model expects batch size of 1
-                                    for i in range(0, len(imgs), batch_size):
-                                        batch_imgs = imgs[i:i + batch_size]
-                                        batch_idxs = idxs[i:i + batch_size]
-                                        outs = detect_batch(batch_imgs, [florence_prompt] * len(batch_imgs), max_new_tokens)
-                                        for j, od in enumerate(outs):
-                                            bxs, lbls, scs = parse_detection_output(od)
-                                            if detection_debug:
-                                                try:
-                                                    boxes_dbg = [(round(b[0],1), round(b[1],1), round(b[2],1), round(b[3],1)) for b in bxs][:20]
-                                                    emit_log(f"[DEBUG] leftover det: batch_idx={j} frame_idx={batch_idxs[j]} num_boxes={len(bxs)} boxes_head={boxes_dbg}")
-                                                except Exception:
-                                                    emit_log(f"[DEBUG] leftover det: batch_idx={j} frame_idx={batch_idxs[j]} num_boxes={len(bxs)}")
-                                            results_map[batch_idxs[j]] = (bxs, lbls, scs)
-                                    for _ in staged:
-                                        detect_queue.task_done()
-                                    staged = []
-                        except Exception as e:
-                            emit_log(f"Detection worker stopped: {e}")
+                    _det_worker = partial(
+                        detection_worker,
+                        detect_queue=detect_queue,
+                        results_map=results_map,
+                        worker_stop=worker_stop,
+                        eof_event=eof_event,
+                        florence_prompt=florence_prompt,
+                        max_new_tokens=max_new_tokens,
+                        detection_debug=detection_debug,
+                        should_stop_callback=self._should_stop,
+                        emit_log_callback=emit_log
+                    )
 
                     # Preload DINOv3 embedder before starting workers - BLOCKING
                     self._set_status(message="Preparing DINOv3 embedder...")
@@ -869,7 +492,6 @@ class _TrainingState:
                         except Exception as e:
                             emit_log(f"DINOv3 embedder preload error: {e}")
                             self._set_status(message="DINOv3 embedder preload error")
-                            # Still try to start workers, they'll load on-demand
                             
                         # Final status update before workers start
                         try:
@@ -890,37 +512,18 @@ class _TrainingState:
                     # Prefetch detection frames by seeking directly to indices: 0, detect_every, 2*detect_every, ...
                     prefetch_thread = None
                     if total > 0:
-                        def _det_prefetcher():
-                            try:
-                                cap2 = cv2.VideoCapture(str(resolved_path))
-                                if not cap2.isOpened():
-                                    emit_log("Prefetch: failed to open video")
-                                    return
-                                for idx in range(0, total, detect_every):
-                                    if worker_stop.is_set():
-                                        break
-                                    try:
-                                        cap2.set(cv2.CAP_PROP_POS_FRAMES, idx)
-                                        ok, fb = cap2.read()
-                                        if not ok:
-                                            continue
-                                        if (target_w, target_h) != (w, h):
-                                            fb = cv2.resize(fb, (target_w, target_h))
-                                        pil = Image.fromarray(fb[:, :, ::-1])
-                                        # Block if queue is full, but remain responsive to stop
-                                        while not worker_stop.is_set():
-                                            try:
-                                                detect_queue.put((idx, pil), timeout=0.05)
-                                                break
-                                            except Full:
-                                                continue
-                                    except Exception as e:
-                                        emit_log(f"Prefetch error at frame {idx}: {e}")
-                                        continue
-                                cap2.release()
-                                emit_log("Prefetch: completed")
-                            except Exception as e:
-                                emit_log(f"Prefetch thread error: {e}")
+                        # Create prefetcher
+                        _det_prefetcher = partial(
+                            detection_prefetcher,
+                            video_path=str(resolved_path),
+                            detect_queue=detect_queue,
+                            worker_stop=worker_stop,
+                            total_frames=total,
+                            detect_every=detect_every,
+                            target_size=(target_w, target_h),
+                            original_size=(w, h),
+                            emit_log_callback=emit_log
+                        )
 
                         prefetch_thread = threading.Thread(target=_det_prefetcher, name="od-prefetch", daemon=True)
                         prefetch_thread.start()
@@ -938,7 +541,7 @@ class _TrainingState:
                         last_raw_labels_for_flow: list | None = None
                         last_raw_scores_for_flow: list | None = None
                         track_id_to_label: dict[int, str] = {}
-                        # SORT tracker for ID assignment (tuned for sparse detections)
+                        # SORT tracker for ID assignment
                         try:
                             tracker = BaseSort(max_age=max(10, int(detect_every)), min_hits=1, iou_threshold=0.2)
                         except Exception:
@@ -1099,7 +702,18 @@ class _TrainingState:
                                         # Store raw Florence-2 detections only on detection frames
                                         if bxs and len(bxs) > 0:  # Only on detection frames with detections
                                             try:
-                                                _enqueue_embeddings(next_emit, fb, bxs, lbls or [], scs or [], tracks=None)
+                                                enqueue_embeddings(
+                                                    frame_index=next_emit,
+                                                    frame_bgr=fb,
+                                                    boxes=bxs,
+                                                    labels=lbls or [],
+                                                    scores=scs or [],
+                                                    embed_queue=embed_queue,
+                                                    score_threshold=score_threshold,
+                                                    set_status_callback=self._set_status,
+                                                    emit_log_callback=emit_log,
+                                                    tracks=None
+                                                )
                                             except Exception:
                                                 pass
                                         
@@ -1111,9 +725,9 @@ class _TrainingState:
                                         else:
                                             draw_boxes_all, draw_labels_all = (bxs or []), (lbls or [])
                                             draw_scores_all = [1.0] * len(draw_boxes_all)
-                                        _emit_frame_bgr(next_emit, fb, draw_boxes_all, draw_labels_all, draw_scores_all)
+                                        self._emit_frame_bgr(next_emit, fb, draw_boxes_all, draw_labels_all, draw_scores_all, score_threshold)
                                     except Exception:
-                                        _emit_frame_bgr(next_emit, fb, bxs or [], lbls or [], [1.0] * (len(bxs) if bxs else 0))
+                                        self._emit_frame_bgr(next_emit, fb, bxs or [], lbls or [], [1.0] * (len(bxs) if bxs else 0), score_threshold)
                                     processed_total += 1
                                     # Periodically persist frames_processed
                                     try:
@@ -1231,7 +845,18 @@ class _TrainingState:
                                     # Store raw Florence-2 detections only on detection frames
                                     if nd and bxs and len(bxs) > 0:  # Only on detection frames with detections
                                         try:
-                                            _enqueue_embeddings(next_emit, fb, bxs, lbls or [], scs or [], tracks=None)
+                                            enqueue_embeddings(
+                                                frame_index=next_emit,
+                                                frame_bgr=fb,
+                                                boxes=bxs,
+                                                labels=lbls or [],
+                                                scores=scs or [],
+                                                embed_queue=embed_queue,
+                                                score_threshold=score_threshold,
+                                                set_status_callback=self._set_status,
+                                                emit_log_callback=emit_log,
+                                                tracks=None
+                                            )
                                         except Exception:
                                             pass
                                     
@@ -1241,12 +866,12 @@ class _TrainingState:
                                         tboxes = [(float(t[0]), float(t[1]), float(t[2]), float(t[3]), int(t[4])) for t in tracks]
                                         tlabs = [f"{track_id_to_label.get(int(t[4]), 'object')} #{int(t[4])}" for t in tracks]
                                         tscores = [1.0] * len(tboxes)
-                                        _emit_frame_bgr(next_emit, fb, tboxes, tlabs, tscores)
+                                        self._emit_frame_bgr(next_emit, fb, tboxes, tlabs, tscores, score_threshold)
                                     else:
                                         # suppress per-frame step debug to reduce noise
-                                        _emit_frame_bgr(next_emit, fb, bxs or [], lbls or [], [1.0] * (len(bxs) if bxs else 0))
+                                        self._emit_frame_bgr(next_emit, fb, bxs or [], lbls or [], [1.0] * (len(bxs) if bxs else 0), score_threshold)
                                 except Exception:
-                                    _emit_frame_bgr(next_emit, fb, bxs or [], lbls or [], [1.0] * (len(bxs) if bxs else 0))
+                                    self._emit_frame_bgr(next_emit, fb, bxs or [], lbls or [], [1.0] * (len(bxs) if bxs else 0), score_threshold)
                                 processed_total += 1
                                 # Periodically persist frames_processed
                                 try:
@@ -1494,6 +1119,49 @@ class _TrainingState:
         t.start()
         return True
 
+    # Emit frame for UI preview
+    def _emit_frame_bgr(self, frame_index: int, frame_bgr, boxes=None, labels=None, scores=None, score_threshold=0.15):
+        try:
+
+            fb = frame_bgr.copy()
+            b = boxes or []
+            l = labels or []
+            s = scores or []
+            h, w = fb.shape[:2]
+            for i, box in enumerate(b):
+                if s and i < len(s) and s[i] < score_threshold:
+                    continue
+                # Support optional 5th element as track id
+                if isinstance(box, (list, tuple)) and len(box) >= 5:
+                    x1, y1, x2, y2, tid = box[0], box[1], box[2], box[3], box[4]
+                else:
+                    x1, y1, x2, y2 = box
+                    tid = None
+                x1 = int(max(0, min(w - 1, x1)))
+                y1 = int(max(0, min(h - 1, y1)))
+                x2 = int(max(0, min(w - 1, x2)))
+                y2 = int(max(0, min(h - 1, y2)))
+                cv2.rectangle(fb, (x1, y1), (x2, y2), (0, 255, 0), 2)
+                label_txt = l[i] if i < len(l) else ""
+                if tid is not None:
+                    # Append tracker id when available
+                    if label_txt:
+                        label_txt = f"{label_txt} #{int(tid)}"
+                    else:
+                        label_txt = f"#{int(tid)}"
+                score_val = s[i] if i < len(s) else None
+                if label_txt or score_val is not None:
+                    text = f"{label_txt}" if score_val is None else f"{label_txt} {score_val:.2f}"
+                    (tw, th), _ = cv2.getTextSize(text, cv2.FONT_HERSHEY_SIMPLEX, 0.5, 1)
+                    y_text = max(0, y1 - 6)
+                    cv2.rectangle(fb, (x1, y_text - th - 4), (x1 + tw + 4, y_text), (0, 255, 0), -1)
+                    cv2.putText(fb, text, (x1 + 2, y_text - 2), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 0), 1, cv2.LINE_AA)
+            pil = Image.fromarray(fb[:, :, ::-1])
+            b64 = image_to_base64_jpeg(pil)
+
+            asyncio.run(broadcast("training_frame", {"index": frame_index, "image": b64}))
+        except Exception:
+            pass
 
 _STATE = _TrainingState()
 

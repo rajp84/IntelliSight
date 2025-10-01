@@ -64,24 +64,51 @@
   </div>
 
   <ul class="divide-y divide-gray-200 rounded-md border border-gray-200 lg:col-span-2">
-    <li *ngFor="let e of entries" class="px-3 py-2 flex items-center gap-2 hover:bg-gray-50 cursor-pointer" (click)="open(e)">
-      <span class="inline-flex items-center justify-center w-5 h-5 rounded text-gray-600">
+    <li *ngFor="let e of entries" 
+        class="px-3 py-2 flex items-center gap-2 hover:bg-blue-50 hover:shadow-sm transition-all duration-200 cursor-pointer group" 
+        (click)="open(e)"
+        [class.bg-blue-100]="selectedFileRelPath === (currentPath ? currentPath + '/' + e.name : e.name)">
+      <span class="inline-flex items-center justify-center w-5 h-5 rounded text-gray-600 group-hover:text-blue-600 transition-colors duration-200">
         <i class="bx" [ngClass]="e.type === 'dir' ? 'bx-folder' : 'bx-file'" ></i>
       </span>
-      <span class="text-sm text-gray-800 truncate flex-1">{{ e.name }}</span>
-      <a *ngIf="e.type === 'file'" [href]="fileUrl(e)" target="_blank" class="text-xs text-blue-600 hover:underline">Open</a>
+      <span class="text-sm text-gray-800 truncate flex-1 group-hover:text-blue-900 transition-colors duration-200">{{ e.name }}</span>
     </li>
     <li *ngIf="entries.length === 0 && !loading" class="px-3 py-2 text-sm text-gray-500">Empty</li>
   </ul>
 
-  <div class="rounded-md border border-gray-200 p-3" *ngIf="previewUrl">
-    <div class="text-sm text-gray-700 mb-2">Preview</div>
-    <ng-container [ngSwitch]="previewType">
+  <!-- Preview Pane -->
+  <div class="rounded-md border border-gray-200 p-3">
+    <div class="flex items-center justify-between mb-2">
+      <div class="text-sm text-gray-700">Preview</div>
+      <a *ngIf="selectedFileRelPath" 
+         [href]="fileUrl({name: selectedFileRelPath.split('/').pop() || '', type: 'file'})" 
+         target="_blank" 
+         class="text-xs text-blue-600 hover:underline hover:text-blue-800 transition-colors duration-200">
+        <svg class="w-4 h-4 inline mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14"></path>
+        </svg>
+        Open in new tab
+      </a>
+    </div>
+    
+    <!-- No file selected message -->
+    <div *ngIf="!previewUrl" class="flex flex-col items-center justify-center py-12 text-center">
+      <svg class="w-16 h-16 text-gray-300 mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path>
+      </svg>
+      <h3 class="text-lg font-medium text-gray-500 mb-2">No file selected</h3>
+      <p class="text-sm text-gray-400 max-w-sm">Click on a file in the library to preview it and access training options.</p>
+    </div>
+    
+    <!-- File preview content -->
+    <ng-container *ngIf="previewUrl" [ngSwitch]="previewType">
       <img *ngSwitchCase="'image'" [src]="previewUrl" alt="preview" class="max-w-full max-h-80 rounded" />
       <video *ngSwitchCase="'video'" [src]="previewUrl" controls class="w-full max-h-80 rounded"></video>
       <div *ngSwitchDefault class="text-sm text-gray-500">No preview available.</div>
     </ng-container>
-    <div class="mt-3 space-y-2">
+    
+    <!-- Training buttons (only show when file is selected) -->
+    <div *ngIf="previewUrl" class="mt-3 space-y-2">
       <button class="inline-flex items-center px-3 py-1.5 rounded-md text-sm bg-green-600 text-white hover:bg-green-700 disabled:opacity-50"
               (click)="startTraining()" [disabled]="trainingState==='running'">
         Auto Detection
