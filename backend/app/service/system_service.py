@@ -28,13 +28,14 @@ _DEFAULT_TRAINING_PARAMS: Dict[str, Any] = {
     "tf32": True,
     "score_threshold": 0.15,
     "interpolate_boxes": True,
-    "dtype_mode": "float32",
+    "dtype_mode": "float16",
+    "embedding_batch_size": 256,
 }
 
 _DEFAULT_CONFIG: Dict[str, Any] = {
     "library_path": "/",
     "training_params": _DEFAULT_TRAINING_PARAMS,
-    "library_file_extensions": "jpg,jpeg,png,gif,webp,svg,bmp,tiff,mp4,avi,mov,wmv,flv,webm,mkv,mp3,wav,flac,aac,ogg,m4a",
+    "library_file_extensions": "jpg,jpeg,png,gif,webp,svg,bmp,tiff,mp4,avi,mov,wmv,flv,webm,mkv",
     "hf_token": "",
     "florence_model": "microsoft/Florence-2-large",
     "dinov3_model": "facebook/dinov3-vitb16-pretrain-lvd1689m",

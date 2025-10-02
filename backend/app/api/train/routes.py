@@ -19,6 +19,8 @@ class StartTrainingRequest(BaseModel):
     path: str
     task_type: Optional[str] = None
     phrase: Optional[str] = None
+    auto_discovery: Optional[bool] = None
+    discovery_interval: Optional[int] = None
 
 
 class UpdateLabelsRequest(BaseModel):
@@ -38,6 +40,10 @@ def start_training(req: StartTrainingRequest) -> Dict[str, Any]:
         extra.update({"task_type": req.task_type})
     if req.phrase:
         extra.update({"phrase": req.phrase})
+    if req.auto_discovery is not None:
+        extra.update({"auto_discovery": req.auto_discovery})
+    if req.discovery_interval is not None:
+        extra.update({"discovery_interval": req.discovery_interval})
     ok = start_od_training(mosaic=req.mosaic, extra_args=extra)
     if not ok:
         raise HTTPException(status_code=409, detail="A training job is already running")

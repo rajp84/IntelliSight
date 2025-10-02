@@ -330,4 +330,31 @@ def enable_trt_vision(
     return False
 
 
+@torch.inference_mode()
+def run_caption_task(
+    model: AutoModelForCausalLM,
+    processor: AutoProcessor,
+    image_pil: Image.Image,
+    device: str,
+    max_new_tokens: int = 64,
+) -> str:
+    """Run Florence-2 CAPTION task on a single image."""
+    # <CAPTION>
+    # <DETAILED_CAPTION>
+    # <MORE_DETAILED_CAPTION>  
+    prompt = "<MORE_DETAILED_CAPTION>"
+    inputs = processor(text=prompt, images=image_pil, return_tensors="pt", padding=True)
+    inputs = _to_model_dtype_on_device(inputs, model, device)
+    generated_ids = model.generate(
+        **inputs,
+        generation_config=model.generation_config,
+        max_new_tokens=max_new_tokens,
+        num_beams=1,
+        do_sample=False,
+        use_cache=False,
+    )
+    text = processor.batch_decode(generated_ids, skip_special_tokens=False)[0]
+    return text
+
+
 

@@ -93,20 +93,24 @@ import { Router } from '@angular/router';
 export class SplashComponent implements OnInit {
   showSplash = false;
   isFadingOut = false;
+  isDevelopment = false;
+  showDebugInfo = false;
 
-  constructor(private router: Router) {}
+  constructor(private router: Router) {
+    // Check if we're in development mode (simple check)
+    this.isDevelopment = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
+  }
 
   ngOnInit(): void {
-    // Check if this is the first visit
-    const hasVisited = localStorage.getItem('intellisight-visited');
-// const hasVisited = false
+    // Check if splash should be shown based on 3-hour expiration
+    const shouldShowSplash = this.shouldShowSplashScreen();
     
-    if (!hasVisited) {
+    if (shouldShowSplash) {
       this.showSplash = true;
-      // Mark as visited
-      localStorage.setItem('intellisight-visited', 'true');
+      // Update the last visit timestamp
+      this.updateLastVisitTimestamp();
       
-      // Auto-hide after 5 seconds if user doesn't click
+      // Auto-hide after 3 seconds if user doesn't click
       setTimeout(() => {
         if (this.showSplash) {
           this.continueToApp();
@@ -115,11 +119,95 @@ export class SplashComponent implements OnInit {
     }
   }
 
+  private shouldShowSplashScreen(): boolean {
+    const lastVisitTimestamp = localStorage.getItem('intellisight-last-visit');
+    
+    // If no timestamp exists, show splash (first visit)
+    if (!lastVisitTimestamp) {
+      return true;
+    }
+    
+    try {
+      const lastVisit = new Date(lastVisitTimestamp).getTime();
+      const now = new Date().getTime();
+      const threeHoursInMs = 3 * 60 * 60 * 1000; // 3 hours in milliseconds
+      
+      // Show splash if more than 3 hours have passed
+      return (now - lastVisit) > threeHoursInMs;
+    } catch (error) {
+      // If there's an error parsing the timestamp, show splash
+      console.warn('Error parsing last visit timestamp:', error);
+      return true;
+    }
+  }
+
+  private updateLastVisitTimestamp(): void {
+    const now = new Date().toISOString();
+    localStorage.setItem('intellisight-last-visit', now);
+  }
+
+  // Method to reset splash screen for testing (can be called from browser console)
+  public static resetSplashScreen(): void {
+    localStorage.removeItem('intellisight-last-visit');
+    console.log('Splash screen reset. Refresh the page to see the splash screen again.');
+  }
+
+  // Method to check time remaining until next splash screen
+  public static getTimeUntilNextSplash(): string {
+    const lastVisitTimestamp = localStorage.getItem('intellisight-last-visit');
+    
+    if (!lastVisitTimestamp) {
+      return 'No previous visit recorded';
+    }
+    
+    try {
+      const lastVisit = new Date(lastVisitTimestamp).getTime();
+      const now = new Date().getTime();
+      const threeHoursInMs = 3 * 60 * 60 * 1000;
+      const timeElapsed = now - lastVisit;
+      const timeRemaining = threeHoursInMs - timeElapsed;
+      
+      if (timeRemaining <= 0) {
+        return 'Splash screen should show now';
+      }
+      
+      const hours = Math.floor(timeRemaining / (60 * 60 * 1000));
+      const minutes = Math.floor((timeRemaining % (60 * 60 * 1000)) / (60 * 1000));
+      const seconds = Math.floor((timeRemaining % (60 * 1000)) / 1000);
+      
+      return `Next splash in: ${hours}h ${minutes}m ${seconds}s`;
+    } catch (error) {
+      return 'Error calculating time remaining';
+    }
+  }
+
   continueToApp(): void {
     this.isFadingOut = true;
+    // Update timestamp when user manually continues
+    this.updateLastVisitTimestamp();
     // Wait for fade animation to complete before hiding
     setTimeout(() => {
       this.showSplash = false;
     }, 500);
+  }
+
+  getLastVisitTime(): string {
+    const lastVisitTimestamp = localStorage.getItem('intellisight-last-visit');
+    if (!lastVisitTimestamp) {
+      return 'Never';
+    }
+    try {
+      return new Date(lastVisitTimestamp).toLocaleString();
+    } catch (error) {
+      return 'Invalid timestamp';
+    }
+  }
+
+  getTimeUntilNextSplash(): string {
+    return SplashComponent.getTimeUntilNextSplash();
+  }
+
+  toggleDebugInfo(): void {
+    this.showDebugInfo = !this.showDebugInfo;
   }
 }

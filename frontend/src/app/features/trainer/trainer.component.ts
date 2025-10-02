@@ -1,7 +1,8 @@
-import { Component, OnDestroy, OnInit, ElementRef, ViewChild } from '@angular/core';
+import { Component, OnDestroy, OnInit, ElementRef, ViewChild, ChangeDetectorRef } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { Router } from '@angular/router';
 import { SocketService } from '../../core/services/socket.service';
+import { HttpClient } from '@angular/common/http';
 
 @Component({
   selector: 'app-trainer',
@@ -25,10 +26,22 @@ export class TrainerComponent implements OnInit, OnDestroy {
   trainingStatus: string | null = null;
   trainingId: string | null = null;
 
-  constructor(private readonly socket: SocketService, private readonly router: Router) {}
+  // Auto discovery state
+  discoveredPhrases: string = '';
+  lastCaption: string = '';
+  discoveryFrameSrc: string = '';
+  showAutoDiscovery: boolean = false;
+
+  constructor(
+    private readonly socket: SocketService, 
+    private readonly router: Router, 
+    private readonly http: HttpClient,
+    private readonly cdr: ChangeDetectorRef
+  ) {}
 
   ngOnInit(): void {
     this.socket.connect();
+    
     this.socket.on('training_frame', (data: any) => {
       this.frameSrc = data?.image || null;
     });
@@ -63,6 +76,42 @@ export class TrainerComponent implements OnInit, OnDestroy {
         this.showCompletionModal = true;
       }
     });
+    
+    // Listen for training caption events
+    this.socket.on('training_caption', (data: any) => {
+      // Parse the special message format: "TRAINING_CAPTION:caption|phrases|frame|base64Image"
+      if (data?.message && data.message.startsWith('TRAINING_CAPTION:')) {
+        const parts = data.message.substring(17).split('|'); // Remove "TRAINING_CAPTION:" prefix
+        if (parts.length >= 3) {
+          const caption = parts[0];
+          const phrases = parts[1];
+          const frame = parts[2];
+          const base64Image = parts[3] || '';
+          
+          this.lastCaption = caption;
+          this.discoveredPhrases = phrases;
+          this.showAutoDiscovery = true;
+          
+          // Set the discovery frame image if available
+          if (base64Image) {
+            this.discoveryFrameSrc = `data:image/jpeg;base64,${base64Image}`;
+          }
+          
+          this.cdr.detectChanges();
+        }
+      }
+      // Handle old format for backward compatibility
+      else if (data?.phrases) {
+        this.discoveredPhrases = data.phrases;
+        this.showAutoDiscovery = true;
+        this.cdr.detectChanges();
+      }
+      if (data?.caption) {
+        this.lastCaption = data.caption;
+        this.showAutoDiscovery = true;
+        this.cdr.detectChanges();
+      }
+    });
   }
 
   ngOnDestroy(): void {
@@ -80,4 +129,5 @@ export class TrainerComponent implements OnInit, OnDestroy {
       this.router.navigate(['/results', this.trainingId]);
     }
   }
+
 }

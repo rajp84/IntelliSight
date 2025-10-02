@@ -7,7 +7,7 @@ export class TrainingService {
 
 	constructor(private readonly http: HttpClient) {}
 
-	startTraining(payload: { path: string; mosaic?: boolean; extra_args?: any; task_type?: string; phrase?: string }) {
+	startTraining(payload: { path: string; mosaic?: boolean; extra_args?: any; task_type?: string; phrase?: string; auto_discovery?: boolean; discovery_interval?: number }) {
 		return this.http.post<{ status: string }>(`${this.trainUrl}`, payload);
 	}
 

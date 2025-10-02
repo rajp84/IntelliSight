@@ -105,10 +105,10 @@ class _TrainingState:
 
         def _runner() -> None:
             try:
-                def emit_log(message: str) -> None:
+                def emit_log(message: str, event_name: str = "training_log") -> None:
                     logging.getLogger(__name__).info(message)
                     try:
-                        asyncio.run(broadcast("training_log", {"message": message}))
+                        asyncio.run(broadcast(event_name, {"message": message}))
                     except RuntimeError:
                         pass
                 
@@ -244,6 +244,8 @@ class _TrainingState:
                     # Get task type and phrase for Florence-2 prompts
                     task_type = (extra_args or {}).get("task_type", "<OD>")
                     phrase = (extra_args or {}).get("phrase", "")
+                    auto_discovery = (extra_args or {}).get("auto_discovery", False)
+                    discovery_interval = (extra_args or {}).get("discovery_interval", 90)
                     
                     # Build the prompt based on task type and phrase
                     if task_type == "<CAPTION_TO_PHRASE_GROUNDING>" and phrase:
@@ -255,10 +257,14 @@ class _TrainingState:
                     emit_log(f"Florence-2 Task: {task_type}")
                     if phrase:
                         emit_log(f"Grounding Phrase: '{phrase}'")
+                    if auto_discovery:
+                        emit_log(f"Auto Discovery: Enabled (will discover phrases every {discovery_interval} frames)")
                     emit_log(f"Florence-2 Prompt: '{florence_prompt}'")
                     
                     # Log training start with task details
-                    if task_type == "<CAPTION_TO_PHRASE_GROUNDING>" and phrase:
+                    if auto_discovery:
+                        emit_log(f"Starting Auto Grounding Phrase Detection training (will discover phrases automatically)")
+                    elif task_type == "<CAPTION_TO_PHRASE_GROUNDING>" and phrase:
                         emit_log(f"Starting Phrase Grounding Detection training with phrase: '{phrase}'")
                     elif task_type == "<DENSE_REGION_CAPTION>":
                         emit_log(f"Starting Dense Region Caption training")
@@ -451,7 +457,12 @@ class _TrainingState:
                         max_new_tokens=max_new_tokens,
                         detection_debug=detection_debug,
                         should_stop_callback=self._should_stop,
-                        emit_log_callback=emit_log
+                        emit_log_callback=emit_log,
+                        auto_discovery=auto_discovery,
+                        discovery_interval=discovery_interval,
+                        florence_model=florence_model,
+                        dtype_mode=dtype_mode,
+                        hf_token=hf_token
                     )
 
                     # Preload DINOv3 embedder before starting workers - BLOCKING

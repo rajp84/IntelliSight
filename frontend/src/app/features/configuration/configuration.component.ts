@@ -93,7 +93,7 @@ export class ConfigurationComponent implements OnInit {
             tf32: tp.tf32 ?? true,
             score_threshold: tp.score_threshold ?? 0.15,
             interpolate_boxes: tp.interpolate_boxes ?? true,
-            dtype_mode: tp.dtype_mode ?? 'float32',
+            dtype_mode: tp.dtype_mode ?? 'float16',
             embedding_batch_size: tp.embedding_batch_size ?? 32
           }
         };

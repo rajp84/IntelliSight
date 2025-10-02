@@ -2,14 +2,42 @@
   <h2 class="text-lg font-semibold text-gray-900 mb-4">Trainer</h2>
   <div class="text-sm text-gray-700 mb-2">Training Preview</div>
   <div class="border rounded-md p-2 bg-gray-50 flex items-start justify-between min-h-64">
-    <div class="flex items-center justify-start">
-      <ng-container *ngIf="frameSrc; else waiting">
-        <img [src]="frameSrc" alt="training frame" class="max-w-full max-w-[512px] max-h-[40vh] w-auto h-auto rounded" />
-      </ng-container>
-      <ng-template #waiting>
-        <div class="text-sm text-gray-500">Waiting for frames...</div>
-      </ng-template>
+    <div class="flex items-start gap-4">
+      <div class="flex items-center justify-start">
+        <ng-container *ngIf="frameSrc; else waiting">
+          <img [src]="frameSrc" alt="training frame" class="max-w-full max-w-[512px] max-h-[40vh] w-auto h-auto rounded" />
+        </ng-container>
+        <ng-template #waiting>
+          <div class="text-sm text-gray-500">Waiting for frames...</div>
+        </ng-template>
+      </div>
+      
+      <!-- Auto Discovery Panel - Only show when training_caption is received -->
+      <div *ngIf="showAutoDiscovery" class="bg-blue-50 border border-blue-200 rounded-md p-3 min-w-[300px] max-w-[400px]">
+        <div class="text-sm font-medium text-blue-900 mb-2">Auto Discovery</div>
+        
+        <!-- Discovery Frame Image -->
+        <div *ngIf="discoveryFrameSrc" class="mb-3">
+          <div class="text-xs text-blue-700 font-medium mb-1">Discovery Frame:</div>
+          <img [src]="discoveryFrameSrc" alt="discovery frame" class="w-full max-w-[200px] h-auto rounded border border-blue-300" />
+        </div>
+        
+        <div *ngIf="lastCaption" class="mb-3">
+          <div class="text-xs text-blue-700 font-medium mb-1">Latest Caption:</div>
+          <div class="text-xs text-blue-800 bg-blue-100 p-2 rounded border-l-2 border-blue-300">
+            {{ lastCaption }}
+          </div>
+        </div>
+        
+        <div *ngIf="discoveredPhrases">
+          <div class="text-xs text-blue-700 font-medium mb-1">Discovered Phrases:</div>
+          <div class="text-xs text-blue-800 bg-blue-100 p-2 rounded border-l-2 border-blue-300">
+            {{ discoveredPhrases }}
+          </div>
+        </div>
+      </div>
     </div>
+    
     <div class="ml-4 text-xs text-gray-600 flex flex-col items-end gap-2">
       <span *ngIf="fps !== null">FPS: {{ fps }}</span>
       <span *ngIf="qDetect !== null">Detect Queue: {{ qDetect }}/{{ qDetectMax || 0 }}</span>

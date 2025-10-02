@@ -15,12 +15,38 @@ import numpy as np
 from PIL import Image
 
 from ..utils.media_utils import create_detection_mosaic, split_mosaic_detections
-from ..service.detector_service import detect_batch, parse_detection_output
+from ..service.detector_service import detect_batch, parse_detection_output, load_detector_model
 from ..service.embedder_service import embed_images
 from ..database.milvus import ensure_training_collection, insert_training_embeddings
 from ..storage.minio_client import put_training_image_bytes, ensure_training_bucket
 from ..service.system_service import get_configuration
 from ..socket.socket_manager import broadcast
+from ..utils.florence_utils import run_caption_task
+import re
+
+
+def extract_phrases_from_caption(caption_text: str, top_k: int = 5) -> str:
+    """Extract phrases from Florence-2 caption text for auto discovery."""
+    # Remove special tokens like <s>, </s>, <...>
+    t = re.sub(r"<[^>]+>", " ", caption_text)
+    t = t.replace("</s>", " ").replace("<s>", " ")
+    # Split on commas/and/semicolons
+    parts = re.split(r"[,;]|\band\b", t, flags=re.IGNORECASE)
+    phrases = []
+    seen = set()
+    for p in parts:
+        p = p.strip().lower()
+        p = re.sub(r"[^a-z0-9\s-]", "", p)
+        p = re.sub(r"\s+", " ", p)
+        if len(p) < 2:
+            continue
+        if p in seen:
+            continue
+        seen.add(p)
+        phrases.append(p)
+        if len(phrases) >= top_k:
+            break
+    return ", ".join(phrases)
 
 
 def embedding_worker(
@@ -190,7 +216,12 @@ def detection_worker(
     max_new_tokens: int,
     detection_debug: bool,
     should_stop_callback: Callable,
-    emit_log_callback: Callable
+    emit_log_callback: Callable,
+    auto_discovery: bool = False,
+    discovery_interval: int = 90,
+    florence_model: str = None,
+    dtype_mode: str = None,
+    hf_token: str = None
 ) -> None:
     """
     Worker function to process detection queue items.
@@ -208,6 +239,12 @@ def detection_worker(
     """
     try:
         staged: List[Tuple[int, Image.Image]] = []
+        
+        # Auto discovery state
+        discover_phrase_str = ""
+        last_discover_refresh_frame = -10**9
+        # Use the configurable discovery_interval parameter
+        
         while not worker_stop.is_set() or staged or not detect_queue.empty():
             # If termination requested, purge immediately
             if should_stop_callback():
@@ -281,11 +318,43 @@ def detection_worker(
                 idxs = [i for (i, _) in group]
                 imgs = [im for (_, im) in group]
                 
+                # Auto discovery: Run CAPTION every N frames to discover phrases
+                if auto_discovery and (idxs[0] - last_discover_refresh_frame) >= discovery_interval:
+                    try:
+                        # Get the loaded model and processor for caption task
+                        processor, model, device = load_detector_model(model_id=florence_model, dtype_mode=dtype_mode, hf_token=hf_token)
+                        # Run CAPTION task on the first image in the batch (single frame, not mosaic)
+                        caption_text = run_caption_task(model, processor, imgs[0], device, max_new_tokens=64)
+                        if caption_text:
+                            # Extract phrases from caption
+                            discover_phrase_str = extract_phrases_from_caption(caption_text, top_k=5)
+                            last_discover_refresh_frame = idxs[0]
+                            emit_log_callback(f"[AUTO DISCOVERY] Caption: '{caption_text}'")
+                            emit_log_callback(f"[AUTO DISCOVERY] Extracted phrases: '{discover_phrase_str}'")
+                            
+                            # Convert the frame image to base64 for UI display
+                            import base64
+                            import io
+                            img_buffer = io.BytesIO()
+                            imgs[0].save(img_buffer, format='JPEG', quality=85)
+                            img_base64 = base64.b64encode(img_buffer.getvalue()).decode('utf-8')
+                            
+                            # Emit to UI via socket using emit_log with custom event
+                            emit_log_callback(f"TRAINING_CAPTION:{caption_text}|{discover_phrase_str}|{idxs[0]}|{img_base64}", "training_caption")
+                    except Exception as e:
+                        emit_log_callback(f"[AUTO DISCOVERY] Failed: {e}")
+                
                 # Create mosaic using the utility function
                 mosaic = create_detection_mosaic(imgs, cols, tile_scale)
                 
+                # Build the prompt for detection
+                if auto_discovery and discover_phrase_str:
+                    current_prompt = f"<CAPTION_TO_PHRASE_GROUNDING>{discover_phrase_str}"
+                else:
+                    current_prompt = florence_prompt
+                
                 # Run detection once on mosaic
-                outs = detect_batch([mosaic], [florence_prompt], max_new_tokens)
+                outs = detect_batch([mosaic], [current_prompt], max_new_tokens)
                 od = outs[0]
                 m_boxes, m_labels, m_scores = parse_detection_output(od)
                 if detection_debug:
@@ -318,7 +387,14 @@ def detection_worker(
                 for i in range(0, len(imgs), batch_size):
                     batch_imgs = imgs[i:i + batch_size]
                     batch_idxs = idxs[i:i + batch_size]
-                    outs = detect_batch(batch_imgs, [florence_prompt] * len(batch_imgs), max_new_tokens)
+                    
+                    # Build the prompt for detection
+                    if auto_discovery and discover_phrase_str:
+                        current_prompt = f"<CAPTION_TO_PHRASE_GROUNDING>{discover_phrase_str}"
+                    else:
+                        current_prompt = florence_prompt
+                    
+                    outs = detect_batch(batch_imgs, [current_prompt] * len(batch_imgs), max_new_tokens)
                     for j, od in enumerate(outs):
                         bxs, lbls, scs = parse_detection_output(od)
                         if detection_debug:

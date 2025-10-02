@@ -32,6 +32,7 @@ export class LibraryComponent {
   selectedFileRelPath: string | null = null;
   trainingState: 'idle' | 'running' | 'completed' | 'failed' = 'idle';
   trainingProgress = 0;
+  discoveryInterval: number = 90;
   showGroundingModal = false;
   groundingPhrase = '';
   
@@ -169,6 +170,27 @@ export class LibraryComponent {
       next: () => {
         this.trainingState = 'running';
         this.closeGroundingModal();
+        this.router.navigateByUrl('/trainer');
+      },
+      error: (err: unknown) => {
+        this.trainingState = 'failed';
+        console.error(err);
+      }
+    });
+  }
+
+  startAutoGroundingTraining(): void {
+    if (!this.selectedFileRelPath) return;
+    
+    this.training.startTraining({ 
+      path: this.selectedFileRelPath, 
+      mosaic: true,
+      task_type: '<CAPTION_TO_PHRASE_GROUNDING>',
+      auto_discovery: true,
+      discovery_interval: this.discoveryInterval
+    }).subscribe({
+      next: () => {
+        this.trainingState = 'running';
         this.router.navigateByUrl('/trainer');
       },
       error: (err: unknown) => {
