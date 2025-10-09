@@ -19,6 +19,9 @@ if not root_logger.handlers:
         format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
     )
 logging.getLogger("app").setLevel(logging.INFO)
+# Enable debug logging for testing and Milvus
+logging.getLogger("app.service.test_service_batched").setLevel(logging.DEBUG)
+logging.getLogger("app.database.milvus").setLevel(logging.DEBUG)
 
 # === DEV ONLY CORS (disable in prod if serving same origin) ===
 # Set env flag to toggle this if you like
@@ -39,6 +42,7 @@ from .api.example_1.routes import router as example_1_router
 from .api.example_2.routes import router as example_2_router
 from .api.system.routes import router as system_router
 from .api.train.routes import router as train_router
+from .api.test.routes import router as test_router
 from .database.connection_manager import init_connections, start_monitor, shutdown
 from .service.system_service import start_system_stats_broadcast
 
@@ -48,6 +52,7 @@ fastapi_app.include_router(example_1_router, prefix=ROUTER_PREFIX + "/example1")
 fastapi_app.include_router(example_2_router, prefix=ROUTER_PREFIX + "/example2")
 fastapi_app.include_router(system_router, prefix=ROUTER_PREFIX)
 fastapi_app.include_router(train_router, prefix=ROUTER_PREFIX + "/train")
+fastapi_app.include_router(test_router, prefix=ROUTER_PREFIX + "/test")
 
 # ---- Startup/Shutdown: DB Connections ----
 @fastapi_app.on_event("startup")

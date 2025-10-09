@@ -11,8 +11,9 @@ from .mongo import (
     insert_one,
     update_one,
     delete_one,
+    get_collection
 )
-
+from bson import ObjectId  # type: ignore
 
 COLLECTION_NAME = "training"
 
@@ -73,7 +74,7 @@ def mark_training_status(
     fps_effective: Optional[float] = None,
     error: Optional[str] = None,
 ) -> Dict[str, Any]:
-    """Convenience helper to finalize/update status with computed elapsed time."""
+    """Update training record"""
     now = time.time()
     started = None
     try:
@@ -94,17 +95,9 @@ def mark_training_status(
         set_fields["fps_effective"] = float(fps_effective)
     if error is not None:
         set_fields["error"] = error
-    # Remove None values to keep document clean
+
     set_fields = {k: v for k, v in set_fields.items() if v is not None}
     return update_training_record(record_id, set_fields=set_fields)
-
-
-__all__ = [
-    "create_training_record",
-    "update_training_record",
-    "mark_training_status",
-    "delete_training_record",
-]
 
 
 def error_out_running_records(reason: Optional[str] = None) -> int:
@@ -121,7 +114,6 @@ def error_out_running_records(reason: Optional[str] = None) -> int:
                 mark_training_status(doc.get("_id"), "error", error=reason or "Superseded by new training run")
                 updated += 1
             except Exception:
-                # best effort per-doc
                 pass
     except Exception:
         return 0
@@ -138,8 +130,7 @@ def list_training_runs(page: int = 1, page_size: int = 20) -> Dict[str, Any]:
     page_size = max(1, min(200, int(page_size)))
     skip = (page - 1) * page_size
     try:
-        # Count total
-        from .mongo import get_collection
+        
         coll = get_collection(COLLECTION_NAME)
         total = coll.count_documents({})
         # Fetch items sorted by started_at desc
@@ -155,7 +146,7 @@ def list_training_runs(page: int = 1, page_size: int = 20) -> Dict[str, Any]:
         }).sort([("started_at", -1)]).skip(skip).limit(page_size)
         out = []
         for d in items:
-            # Normalize ObjectId to string
+
             _id = str(d.get("_id")) if d.get("_id") is not None else None
             out.append({
                 "_id": _id,
@@ -176,9 +167,8 @@ def list_training_runs(page: int = 1, page_size: int = 20) -> Dict[str, Any]:
 def delete_training_record(record_id: Any) -> bool:
     """Delete a training record by id (string or ObjectId). Returns True if removed."""
     try:
-        # Accept string id and convert
-        try:
-            from bson import ObjectId  # type: ignore
+
+        try:            
             rid = ObjectId(record_id) if not hasattr(record_id, "binary") else record_id
         except Exception:
             rid = record_id
@@ -187,4 +177,9 @@ def delete_training_record(record_id: Any) -> bool:
     except Exception:
         return False
 
-
+__all__ = [
+    "create_training_record",
+    "update_training_record",
+    "mark_training_status",
+    "delete_training_record",
+]

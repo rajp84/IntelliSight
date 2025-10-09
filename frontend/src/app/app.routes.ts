@@ -6,6 +6,7 @@ import { ResultDetailComponent } from './features/results/result-detail.componen
 import { AnalyzeComponent } from './features/analyze/analyze.component';
 import { ConfigurationComponent } from './features/configuration/configuration.component';
 import { TrainerComponent } from './features/trainer/trainer.component';
+import { TesterComponent } from './features/tester/tester.component';
 
 export const routes: Routes = [
   { path: '', redirectTo: '/things', pathMatch: 'full' },
@@ -16,4 +17,5 @@ export const routes: Routes = [
   { path: 'analyze', component: AnalyzeComponent },
   { path: 'configuration', component: ConfigurationComponent },
   { path: 'trainer', component: TrainerComponent },
+  { path: 'tester', component: TesterComponent },
 ];

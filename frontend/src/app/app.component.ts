@@ -4,6 +4,7 @@ import { RouterOutlet, RouterLink, RouterLinkActive } from '@angular/router';
 import { SocketService } from './core/services/socket.service';
 import { SystemService } from './core/services/system.service';
 import { TrainingService } from './core/services/training.service';
+import { TestingService } from './core/services/testing.service';
 import { SplashComponent } from './features/splash/splash.component';
 
 @Component({
@@ -28,6 +29,9 @@ export class AppComponent implements OnInit {
   trainingThumb: string | null = null;
   trainingFooter: { state: string; progress: number; message?: string; queue_detect?: number; queue_detect_max?: number; queue_results?: number; queue_embed?: number; queue_embed_max?: number; fps?: number } | null = null;
   terminating = false;
+  testingThumb: string | null = null;
+  testingFooter: { state: string; progress: number; message?: string; fps?: number } | null = null;
+  terminatingTesting = false;
 
   showTooltip(event: MouseEvent, text: string): void {
     const target = event.currentTarget as HTMLElement;
@@ -53,7 +57,8 @@ export class AppComponent implements OnInit {
 
   constructor(private readonly socketService: SocketService,
               private readonly system: SystemService,
-              private readonly training: TrainingService) {
+              private readonly training: TrainingService,
+              private readonly testing: TestingService) {
     this.socketService.connect();
   }
 
@@ -108,11 +113,39 @@ export class AppComponent implements OnInit {
       }
     });
 
+    // Testing footer status
+    this.socketService.on<any>('testing_status', (t) => {
+      this.testingFooter = {
+        state: t?.state ?? 'idle',
+        progress: Math.round(t?.progress ?? 0),
+        message: t?.message,
+        fps: t?.fps
+      };
+      const st = this.testingFooter.state;
+      if (st !== 'running') {
+        this.terminatingTesting = false;
+        if (st === 'idle' || st === 'cancelled' || st === 'completed' || st === 'failed') {
+          this.testingFooter.message = undefined;
+          this.testingFooter.progress = st === 'idle' ? 0 : this.testingFooter.progress;
+          // Clear thumbnail when not running
+          this.testingThumb = null;
+        }
+      }
+    });
+
     // Preview thumbnail updates
     this.socketService.on<any>('training_frame', (data) => {
       const img: string | undefined = data?.image;
       if (img && typeof img === 'string') {
         this.trainingThumb = img.startsWith('data:image') ? img : `data:image/jpeg;base64,${img}`;
+      }
+    });
+
+    // Testing preview thumbnail updates
+    this.socketService.on<any>('testing_frame', (data) => {
+      const img: string | undefined = data?.image;
+      if (img && typeof img === 'string') {
+        this.testingThumb = img.startsWith('data:image') ? img : `data:image/jpeg;base64,${img}`;
       }
     });
 
@@ -141,6 +174,27 @@ export class AppComponent implements OnInit {
       },
       error: () => {}
     });
+
+    // Sync initial testing state
+    this.testing.getStatus().subscribe({
+      next: (t: any) => {
+        this.testingFooter = {
+          state: t?.state ?? 'idle',
+          progress: Math.round(t?.progress ?? 0),
+          message: t?.message,
+          fps: t?.fps
+        };
+        const st = this.testingFooter.state;
+        if (st !== 'running') {
+          this.terminatingTesting = false;
+          if (st === 'idle' || st === 'cancelled' || st === 'completed' || st === 'failed') {
+            this.testingFooter.message = undefined;
+            this.testingFooter.progress = st === 'idle' ? 0 : this.testingFooter.progress;
+          }
+        }
+      },
+      error: () => {}
+    });
   }
 
   terminate(): void {
@@ -149,6 +203,15 @@ export class AppComponent implements OnInit {
     this.training.terminateTraining().subscribe({
       next: () => {},
       error: () => { this.terminating = false; }
+    });
+  }
+
+  terminateTesting(): void {
+    if (this.terminatingTesting) return;
+    this.terminatingTesting = true;
+    this.testing.terminate().subscribe({
+      next: () => {},
+      error: () => { this.terminatingTesting = false; }
     });
   }
 }
