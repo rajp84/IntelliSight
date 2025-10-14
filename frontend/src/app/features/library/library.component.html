@@ -107,7 +107,7 @@
       <div *ngSwitchDefault class="text-sm text-gray-500">No preview available.</div>
     </ng-container>
     
-    <!-- Training buttons (only show when file is selected) -->
+    <!-- Training/Test buttons (only show when file is selected) -->
     <div *ngIf="previewUrl" class="mt-3 space-y-2">
       <button class="inline-flex items-center px-3 py-1.5 rounded-md text-sm bg-green-600 text-white hover:bg-green-700 disabled:opacity-50"
               (click)="startTraining()" [disabled]="trainingState==='running'">
@@ -140,6 +140,47 @@
               (click)="startDenseCaptionTraining()" [disabled]="trainingState==='running'">
         Dense Region Caption
       </button>
+      <br>
+      <br>
+      <hr>
+<br>
+<br>
+        <div class="flex items-center gap-2">
+          <button class="inline-flex items-center px-3 py-1.5 rounded-md text-sm bg-indigo-600 text-white hover:bg-indigo-700 disabled:opacity-50"
+                  (click)="startTesting()" [disabled]="trainingState==='running'">
+            Test (similarity search)
+          </button>
+          <div class="flex items-center gap-2">
+            <div class="flex items-center gap-1">
+              <label class="text-xs text-gray-600">Threshold:</label>
+              <input type="number" 
+                     [(ngModel)]="similarityThreshold" 
+                     min="0" 
+                     max="1" 
+                     step="0.1"
+                     class="w-16 px-2 py-1 text-xs border border-gray-300 rounded focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
+                     [disabled]="trainingState==='running'">
+            </div>
+            <div class="flex items-center gap-1">
+              <label class="text-xs text-gray-600">Batch Size:</label>
+              <input type="number" 
+                     [(ngModel)]="batchSize" 
+                     min="1" 
+                     max="16" 
+                     step="1"
+                     class="w-16 px-2 py-1 text-xs border border-gray-300 rounded focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
+                     [disabled]="trainingState==='running'">
+            </div>
+            <div class="flex items-center gap-1">
+              <input type="checkbox" 
+                     [(ngModel)]="useBatching" 
+                     id="useBatching"
+                     class="w-4 h-4 text-indigo-600 border-gray-300 rounded focus:ring-indigo-500"
+                     [disabled]="trainingState==='running'">
+              <label for="useBatching" class="text-xs text-gray-600">Use Batching</label>
+            </div>
+          </div>
+        </div>
     </div>
   </div>
 </div>

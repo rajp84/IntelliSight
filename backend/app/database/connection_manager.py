@@ -21,14 +21,13 @@ def _ping_mongo() -> bool:
         client = get_mongo_client()
         client.admin.command("ping")
         return True
-    except Exception as exc:  # broad to catch network/transient errors
+    except Exception as exc:
         logger.warning("MongoDB ping failed: %s", exc)
         return False
 
 
 def _ping_milvus() -> bool:
     try:
-        # list_collections is a cheap call and validates the connection
         utility.list_collections()
         return True
     except Exception as exc:
@@ -53,7 +52,6 @@ async def _connect_with_retry(connect_fn, ping_fn, name: str, initial_delay: flo
 
 
 async def init_connections() -> None:
-    # Attempt initial connections with retry until success
     await asyncio.gather(
         _connect_with_retry(mongo_connect, _ping_mongo, "MongoDB"),
         _connect_with_retry(milvus_connect, _ping_milvus, "Milvus"),
@@ -61,7 +59,6 @@ async def init_connections() -> None:
 
 
 async def _monitor_loop(poll_interval: float = 10.0) -> None:
-    # Periodically ping; if disconnected, retry until reconnected
     while True:
         try:
             mongo_ok = _ping_mongo()
@@ -99,7 +96,6 @@ async def stop_monitor() -> None:
 
 async def shutdown() -> None:
     await stop_monitor()
-    # Optional: close connections explicitly (clients typically handle shutdown gracefully)
     try:
         mongo_disconnect()
     except Exception:

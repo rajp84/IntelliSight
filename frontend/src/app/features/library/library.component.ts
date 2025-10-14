@@ -5,6 +5,7 @@ import { SystemService } from '../../core/services/system.service';
 import { TrainingService } from '../../core/services/training.service';
 import { SocketService } from '../../core/services/socket.service';
 import { Router } from '@angular/router';
+import { TestingService } from '../../core/services/testing.service';
 
 @Component({
   selector: 'app-library',
@@ -50,11 +51,17 @@ export class LibraryComponent {
   // Drag and drop functionality
   isDragOver = false;
   dragCounter = 0;
+  
+  // Testing functionality
+  similarityThreshold = 0.7;
+  batchSize = 32;
+  useBatching = true;
 
   constructor(private readonly system: SystemService,
               private readonly training: TrainingService,
               private readonly socket: SocketService,
-              private readonly router: Router) {}
+              private readonly router: Router,
+              private readonly testing: TestingService) {}
 
   ngOnInit(): void {
     this.load();
@@ -214,6 +221,19 @@ export class LibraryComponent {
       },
       error: (err: unknown) => {
         this.trainingState = 'failed';
+        console.error(err);
+      }
+    });
+  }
+
+  startTesting(): void {
+    if (!this.selectedFileRelPath) return;
+    this.testing.startTest(this.selectedFileRelPath, this.similarityThreshold, this.batchSize, this.useBatching).subscribe({
+      next: (response) => {
+        console.log('Testing started:', response);
+        this.router.navigateByUrl('/tester');
+      },
+      error: (err: unknown) => {
         console.error(err);
       }
     });

@@ -156,3 +156,5 @@ cython_debug/
 /chromadb/
 /outputs/
 /media/
+
+*.pth

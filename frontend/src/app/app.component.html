@@ -87,7 +87,7 @@
             
             <!-- Version and beta badge -->
             <div class="flex items-center space-x-1 sm:space-x-2">
-              <span class="hidden sm:inline text-xs text-gray-500">v 0.1.2</span>
+              <span class="hidden sm:inline text-xs text-gray-500">v 0.1.3</span>
               <span class="text-[10px] uppercase tracking-wide bg-blue-100 text-blue-700 border border-blue-200 rounded px-1.5 py-0.5">beta</span>
             </div>
             
@@ -110,21 +110,38 @@
 
   <footer class="border-t border-gray-200 bg-white">
     <div class="mx-auto px-4 sm:px-6 lg:px-8 h-12 flex items-center justify-between text-sm text-gray-500">
-      <div class="flex items-center gap-3 min-w-0" *ngIf="trainingFooter as tf">
-        <span class="text-gray-600 shrink-0" *ngIf="tf.state !== 'idle'">Training: {{ tf.state }}</span>
-        <span class="w-40 h-2 bg-gray-200 rounded overflow-hidden shrink-0" *ngIf="tf.state !== 'idle'">
-          <span class="block h-full bg-blue-600" [style.width.%]="tf.progress"></span>
-        </span>
-        <span class="text-gray-500" *ngIf="tf.fps">FPS: {{ tf.fps }}</span>
-        <span class="text-gray-500" *ngIf="tf.queue_detect !== undefined">DQ: {{ tf.queue_detect }}/{{ tf.queue_detect_max || 0 }}</span>
-        <span class="text-gray-500" *ngIf="tf.queue_results !== undefined">RQ: {{ tf.queue_results }}</span>
-        <span class="text-gray-500" *ngIf="tf.queue_embed !== undefined">EQ: {{ tf.queue_embed }}/{{ tf.queue_embed_max || 0 }}</span>
-        <span class="text-gray-400 truncate" *ngIf="tf.message">{{ tf.message }}</span>
+      <!-- Left Section: Status or Empty -->
+      <div class="flex items-center gap-3 min-w-0">
+        <!-- Training Status (only show when training is running) -->
+        <div class="flex items-center gap-3 min-w-0" *ngIf="trainingFooter?.state === 'running'">
+          <span class="text-gray-600 shrink-0">Training: {{ trainingFooter?.state }}</span>
+          <span class="w-40 h-2 bg-gray-200 rounded overflow-hidden shrink-0">
+            <span class="block h-full bg-blue-600" [style.width.%]="trainingFooter?.progress || 0"></span>
+          </span>
+          <span class="text-gray-500" *ngIf="trainingFooter?.fps">FPS: {{ trainingFooter?.fps }}</span>
+          <span class="text-gray-500" *ngIf="trainingFooter?.queue_detect !== undefined">DQ: {{ trainingFooter?.queue_detect }}/{{ trainingFooter?.queue_detect_max || 0 }}</span>
+          <span class="text-gray-500" *ngIf="trainingFooter?.queue_results !== undefined">RQ: {{ trainingFooter?.queue_results }}</span>
+          <span class="text-gray-500" *ngIf="trainingFooter?.queue_embed !== undefined">EQ: {{ trainingFooter?.queue_embed }}/{{ trainingFooter?.queue_embed_max || 0 }}</span>
+          <span class="text-gray-400 truncate" *ngIf="trainingFooter?.message">{{ trainingFooter?.message }}</span>
+        </div>
+
+        <!-- Testing Status (only show when testing is running) -->
+        <div class="flex items-center gap-3 min-w-0" *ngIf="testingFooter?.state === 'running'">
+          <span class="text-gray-600 shrink-0">Testing: {{ testingFooter?.state }}</span>
+          <span class="w-40 h-2 bg-gray-200 rounded overflow-hidden shrink-0">
+            <span class="block h-full bg-indigo-600" [style.width.%]="testingFooter?.progress || 0"></span>
+          </span>
+          <span class="text-gray-500" *ngIf="testingFooter?.fps">FPS: {{ testingFooter?.fps }}</span>
+          <span class="text-gray-400 truncate" *ngIf="testingFooter?.message">{{ testingFooter?.message }}</span>
+        </div>
       </div>
+
+      <!-- Action Buttons -->
       <div class="pl-4 flex items-center gap-2">
-        <ng-container *ngIf="trainingFooter?.state === 'running'; else idleBadge">
+        <!-- Training Actions -->
+        <ng-container *ngIf="trainingFooter?.state === 'running'">
           <a *ngIf="trainingThumb" routerLink="/trainer" class="inline-flex items-center flex-shrink-0">
-            <img [src]="trainingThumb" alt="preview" class="w-10 h-10 object-cover rounded border border-gray-300" />
+            <img [src]="trainingThumb" alt="training preview" class="w-10 h-10 object-cover rounded border border-gray-300" />
           </a>
           <a routerLink="/trainer" class="px-2 py-1 text-xs rounded bg-blue-600 text-white hover:bg-blue-700">Preview</a>
           <button class="px-2 py-1 text-xs rounded bg-red-600 text-white hover:bg-red-700 disabled:opacity-50"
@@ -132,9 +149,23 @@
             {{ terminating ? 'Terminating…' : 'Terminate' }}
           </button>
         </ng-container>
-        <ng-template #idleBadge>
+
+        <!-- Testing Actions -->
+        <ng-container *ngIf="testingFooter?.state === 'running'">
+          <a *ngIf="testingThumb" routerLink="/tester" class="inline-flex items-center flex-shrink-0">
+            <img [src]="testingThumb" alt="testing preview" class="w-10 h-10 object-cover rounded border border-gray-300" />
+          </a>
+          <a routerLink="/tester" class="px-2 py-1 text-xs rounded bg-indigo-600 text-white hover:bg-indigo-700">Preview</a>
+          <button class="px-2 py-1 text-xs rounded bg-red-600 text-white hover:bg-red-700 disabled:opacity-50"
+                  (click)="terminateTesting()" [disabled]="terminatingTesting">
+            {{ terminatingTesting ? 'Terminating…' : 'Terminate' }}
+          </button>
+        </ng-container>
+
+        <!-- Idle Status (only show when neither training nor testing is running) -->
+        <ng-container *ngIf="(trainingFooter?.state !== 'running') && (testingFooter?.state !== 'running')">
           <span class="px-2 py-0.5 text-xs rounded bg-gray-100 text-gray-700 border border-gray-200">Idle</span>
-        </ng-template>
+        </ng-container>
       </div>
     </div>
   </footer>
