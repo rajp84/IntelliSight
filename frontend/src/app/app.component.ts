@@ -4,7 +4,7 @@ import { RouterOutlet, RouterLink, RouterLinkActive } from '@angular/router';
 import { SocketService } from './core/services/socket.service';
 import { SystemService } from './core/services/system.service';
 import { TrainingService } from './core/services/training.service';
-import { TestingService } from './core/services/testing.service';
+import { ModelTrainerService } from './core/services/model-trainer.service';
 import { SplashComponent } from './features/splash/splash.component';
 
 @Component({
@@ -29,9 +29,7 @@ export class AppComponent implements OnInit {
   trainingThumb: string | null = null;
   trainingFooter: { state: string; progress: number; message?: string; queue_detect?: number; queue_detect_max?: number; queue_results?: number; queue_embed?: number; queue_embed_max?: number; fps?: number } | null = null;
   terminating = false;
-  testingThumb: string | null = null;
-  testingFooter: { state: string; progress: number; message?: string; fps?: number } | null = null;
-  terminatingTesting = false;
+  isModelTrainerRunning = false;
 
   showTooltip(event: MouseEvent, text: string): void {
     const target = event.currentTarget as HTMLElement;
@@ -58,7 +56,7 @@ export class AppComponent implements OnInit {
   constructor(private readonly socketService: SocketService,
               private readonly system: SystemService,
               private readonly training: TrainingService,
-              private readonly testing: TestingService) {
+              private readonly modelTrainer: ModelTrainerService) {
     this.socketService.connect();
   }
 
@@ -105,47 +103,64 @@ export class AppComponent implements OnInit {
       if (st !== 'running') {
         this.terminating = false;
         if (st === 'idle' || st === 'cancelled' || st === 'completed' || st === 'failed') {
-          this.trainingFooter.message = undefined;
-          this.trainingFooter.progress = st === 'idle' ? 0 : this.trainingFooter.progress;
+          if (this.trainingFooter) {
+            this.trainingFooter.message = undefined;
+            this.trainingFooter.progress = st === 'idle' ? 0 : this.trainingFooter.progress;
+          }
           // Clear thumbnail when not running
           this.trainingThumb = null;
         }
+      } else {
+        // Classic trainer running (not model trainer)
+        this.isModelTrainerRunning = false;
       }
     });
 
-    // Testing footer status
-    this.socketService.on<any>('testing_status', (t) => {
-      this.testingFooter = {
+    // Also listen to model trainer status (primary event from trainer)
+    this.socketService.on<any>('model_trainer_status', (t) => {
+      this.trainingFooter = {
         state: t?.state ?? 'idle',
         progress: Math.round(t?.progress ?? 0),
         message: t?.message,
+        queue_detect: t?.queue_detect,
+        queue_detect_max: t?.queue_detect_max,
+        queue_results: t?.queue_results,
+        queue_embed: t?.queue_embed,
+        queue_embed_max: t?.queue_embed_max,
         fps: t?.fps
-      };
-      const st = this.testingFooter.state;
-      if (st !== 'running') {
-        this.terminatingTesting = false;
+      } as any;
+      const st = this.trainingFooter?.state;
+      if (st && st !== 'running') {
+        this.terminating = false;
         if (st === 'idle' || st === 'cancelled' || st === 'completed' || st === 'failed') {
-          this.testingFooter.message = undefined;
-          this.testingFooter.progress = st === 'idle' ? 0 : this.testingFooter.progress;
-          // Clear thumbnail when not running
-          this.testingThumb = null;
+          if (this.trainingFooter) {
+            this.trainingFooter.message = undefined;
+            this.trainingFooter.progress = st === 'idle' ? 0 : this.trainingFooter.progress;
+          }
+          this.trainingThumb = null;
         }
+        this.isModelTrainerRunning = false;
+      } else if (st === 'running') {
+        this.isModelTrainerRunning = true;
       }
     });
 
-    // Preview thumbnail updates
+    // Keep the footer message updated with the last training log line
+    this.socketService.on<any>('model_trainer_log', (l) => {
+      const msg = typeof l?.message === 'string' ? l.message : undefined;
+      if (!msg) return;
+      if (!this.trainingFooter) {
+        this.trainingFooter = { state: 'running', progress: 0, message: msg } as any;
+      } else {
+        this.trainingFooter.message = msg;
+      }
+    });
+
+    // Preview thumbnail updates (training)
     this.socketService.on<any>('training_frame', (data) => {
       const img: string | undefined = data?.image;
       if (img && typeof img === 'string') {
         this.trainingThumb = img.startsWith('data:image') ? img : `data:image/jpeg;base64,${img}`;
-      }
-    });
-
-    // Testing preview thumbnail updates
-    this.socketService.on<any>('testing_frame', (data) => {
-      const img: string | undefined = data?.image;
-      if (img && typeof img === 'string') {
-        this.testingThumb = img.startsWith('data:image') ? img : `data:image/jpeg;base64,${img}`;
       }
     });
 
@@ -167,34 +182,38 @@ export class AppComponent implements OnInit {
         if (st !== 'running') {
           this.terminating = false;
           if (st === 'idle' || st === 'cancelled' || st === 'completed' || st === 'failed') {
-            this.trainingFooter.message = undefined;
-            this.trainingFooter.progress = st === 'idle' ? 0 : this.trainingFooter.progress;
+            if (this.trainingFooter) {
+              this.trainingFooter.message = undefined;
+              this.trainingFooter.progress = st === 'idle' ? 0 : this.trainingFooter.progress;
+            }
           }
         }
       },
       error: () => {}
     });
 
-    // Sync initial testing state
-    this.testing.getStatus().subscribe({
+    // Sync initial model-trainer state
+    this.modelTrainer.status().subscribe({
       next: (t: any) => {
-        this.testingFooter = {
-          state: t?.state ?? 'idle',
-          progress: Math.round(t?.progress ?? 0),
-          message: t?.message,
-          fps: t?.fps
-        };
-        const st = this.testingFooter.state;
-        if (st !== 'running') {
-          this.terminatingTesting = false;
-          if (st === 'idle' || st === 'cancelled' || st === 'completed' || st === 'failed') {
-            this.testingFooter.message = undefined;
-            this.testingFooter.progress = st === 'idle' ? 0 : this.testingFooter.progress;
-          }
+        const st = t?.state ?? 'idle';
+        if (st === 'running' || st === 'terminating') {
+          this.trainingFooter = {
+            state: st,
+            progress: Math.round(t?.progress ?? 0),
+            message: t?.message,
+            queue_detect: t?.queue_detect,
+            queue_detect_max: t?.queue_detect_max,
+            queue_results: t?.queue_results,
+            queue_embed: t?.queue_embed,
+            queue_embed_max: t?.queue_embed_max,
+            fps: t?.fps
+          } as any;
+          this.isModelTrainerRunning = (st === 'running' || st === 'terminating');
         }
       },
       error: () => {}
     });
+
   }
 
   terminate(): void {
@@ -206,12 +225,5 @@ export class AppComponent implements OnInit {
     });
   }
 
-  terminateTesting(): void {
-    if (this.terminatingTesting) return;
-    this.terminatingTesting = true;
-    this.testing.terminate().subscribe({
-      next: () => {},
-      error: () => { this.terminatingTesting = false; }
-    });
-  }
+  
 }

@@ -412,10 +412,12 @@ def enqueue_embeddings(
                 "crop": crop, 
                 "label": label_txt, 
                 "score": float(scr), 
-                #"bbox": (int(round(x1)), int(round(y1)), int(round(x2)), int(round(y2))), 
+                "bbox": (int(round(x1)), int(round(y1)), int(round(x2)), int(round(y2))), 
                 #"track_id": None,  # No tracking for raw detections (we'll add it later... not working correctly yet)
                 "frame_index": frame_index,
-                "unique_id": unique_id
+                "unique_id": unique_id,
+                # Store full frame for later upload alongside the crop image
+                "full_frame_bgr": frame_bgr
             }
             
             # Enqueue this individual detection

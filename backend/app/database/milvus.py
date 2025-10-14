@@ -125,6 +125,63 @@ def create_collection(
     return collection
 
 
+def ensure_things_collection(dim: int, *, metric: str = "COSINE") -> Collection:
+    """Create (or validate) the 'things' collection with an extra scalar field 'group_id' (VARCHAR).
+
+    Fields:
+      - id (INT64, primary, auto)
+      - embedding (FLOAT_VECTOR, dim)
+      - payload (VARCHAR)
+      - group_id (VARCHAR, max_length=64)
+    """
+    name = "things"
+    if utility.has_collection(name):
+        coll = Collection(name)
+        # Validate presence of group_id field; if missing, raise to prompt cleanup/recreate
+        has_group = any(getattr(f, 'name', '') == 'group_id' for f in coll.schema.fields)
+        if not has_group:
+            raise RuntimeError("Existing 'things' collection is missing 'group_id' field. Use Delete All to recreate.")
+        # Validate embedding dim
+        for f in coll.schema.fields:
+            if getattr(f, 'name', '') == 'embedding':
+                dim_found = (f.params or {}).get('dim')
+                if dim_found and int(dim_found) != int(dim):
+                    raise RuntimeError("'things' collection dimension mismatch. Use Delete All to recreate.")
+        # Ensure index is present and loaded
+        try:
+            if coll.indexes:
+                pass
+            else:
+                coll.create_index(field_name="embedding", index_params={
+                    "index_type": "HNSW",
+                    "metric_type": metric,
+                    "params": {"M": 32, "efConstruction": 200},
+                })
+            coll.load()
+        except Exception:
+            pass
+        return coll
+
+    # Build schema with group_id
+    id_field = FieldSchema(name="id", dtype=DataType.INT64, is_primary=True, auto_id=True)
+    vector_field = FieldSchema(name="embedding", dtype=DataType.FLOAT_VECTOR, dim=dim)
+    payload_field = FieldSchema(name="payload", dtype=DataType.VARCHAR, max_length=2048)
+    group_field = FieldSchema(name="group_id", dtype=DataType.VARCHAR, max_length=64)
+
+    schema = CollectionSchema(
+        fields=[id_field, vector_field, payload_field, group_field],
+        description="User's personal things library with group field",
+    )
+    coll = Collection(name=name, schema=schema, shards_num=2)
+    coll.create_index(field_name="embedding", index_params={
+        "index_type": "HNSW",
+        "metric_type": metric,
+        "params": {"M": 32, "efConstruction": 200},
+    })
+    coll.load()
+    return coll
+
+
 def insert_entries(
     collection_name: str,
     embeddings: Sequence[Sequence[float]],
@@ -318,11 +375,14 @@ def _update_labels_in_collection(collection_name: str, embedding_ids: List[str],
         
         # Query to get current embeddings and payloads
         query_expr = f"id in {int_ids}"
-        results = collection.query(
-            expr=query_expr,
-            output_fields=["id", "payload", "embedding"],
-            limit=len(int_ids)
-        )
+        out_fields = ["id", "payload", "embedding"]
+        # Include group_id when available (for 'things' collection)
+        try:
+            if any(getattr(f, 'name', '') == 'group_id' for f in collection.schema.fields):
+                out_fields.append("group_id")
+        except Exception:
+            pass
+        results = collection.query(expr=query_expr, output_fields=out_fields, limit=len(int_ids))
         
         if not results:
             print(f"[DEBUG] No embeddings found for IDs: {int_ids}")
@@ -332,9 +392,10 @@ def _update_labels_in_collection(collection_name: str, embedding_ids: List[str],
         
         if use_upsert:
             # Use upsert approach (for things collection)
-            embeddings_list = []
-            payloads_list = []
-            ids_list = []
+            embeddings_list: List[List[float]] = []
+            payloads_list: List[str] = []
+            ids_list: List[int] = []
+            group_ids_list: List[str] = []
             
             for result in results:
                 current_payload = result.get("payload", {})
@@ -350,8 +411,13 @@ def _update_labels_in_collection(collection_name: str, embedding_ids: List[str],
                 ids_list.append(result["id"])
                 embeddings_list.append(result["embedding"])
                 payloads_list.append(json.dumps(current_payload))
+                group_ids_list.append(str(result.get("group_id") or "unknown"))
             
-            collection.upsert([ids_list, embeddings_list, payloads_list])
+            # Respect field order: id, embedding, payload, (optional) group_id
+            if any(getattr(f, 'name', '') == 'group_id' for f in collection.schema.fields):
+                collection.upsert([ids_list, embeddings_list, payloads_list, group_ids_list])
+            else:
+                collection.upsert([ids_list, embeddings_list, payloads_list])
             print(f"[DEBUG] Updated {len(results)} embeddings in {collection_name} with label: '{new_label}'")
             
         else:
@@ -514,11 +580,7 @@ def commit_embeddings_to_things(training_id: str, embedding_ids: List[str]) -> i
 
         if not utility.has_collection(things_collection_name):
             print(f"[DEBUG] Creating 'things' collection with dimension {source_dim}")
-            things_collection = create_collection(
-                collection_name=things_collection_name,
-                dim=source_dim,
-                description="User's personal things library"
-            )
+            things_collection = ensure_things_collection(dim=source_dim)
         else:
 
             things_collection = Collection(things_collection_name)
@@ -546,8 +608,9 @@ def commit_embeddings_to_things(training_id: str, embedding_ids: List[str]) -> i
         
         things_collection.load()
         
-        embeddings_list = []
-        payloads_list = []
+        embeddings_list: List[List[float]] = []
+        payloads_list: List[str] = []
+        group_ids_list: List[str] = []
         
         for result in results:
             current_payload = result.get("payload", {})
@@ -564,12 +627,16 @@ def commit_embeddings_to_things(training_id: str, embedding_ids: List[str]) -> i
             
             embeddings_list.append(result["embedding"])
             payloads_list.append(json.dumps(current_payload))
+            group_ids_list.append("unknown")
             
             print(f"[DEBUG] Prepared embedding for things collection: {current_payload}")
         
 
         print(f"[DEBUG] Inserting {len(embeddings_list)} embeddings into things collection")
-        insert_result = things_collection.insert([embeddings_list, payloads_list])
+        if any(getattr(f, 'name', '') == 'group_id' for f in things_collection.schema.fields):
+            insert_result = things_collection.insert([embeddings_list, payloads_list, group_ids_list])
+        else:
+            insert_result = things_collection.insert([embeddings_list, payloads_list])
         things_collection.flush()
         
         # Copy images to things bucket
@@ -611,6 +678,17 @@ def commit_embeddings_to_things(training_id: str, embedding_ids: List[str]) -> i
                 put_image_bytes("things", things_filename, image_data, "image/jpeg")
                 
                 print(f"[DEBUG] Successfully copied image: {source_filename} -> {things_filename}")
+
+                # Also copy the full-frame image with _full suffix if present
+                try:
+                    source_full_filename = f"{original_image_id}_full.jpg"
+                    print(f"[DEBUG] Attempting to copy full frame: {source_full_filename}")
+                    full_image_data, _ = get_object_bytes(source_bucket, source_full_filename)
+                    things_full_filename = f"{payload_data['image_id']}_full.jpg"
+                    put_image_bytes("things", things_full_filename, full_image_data, "image/jpeg")
+                    print(f"[DEBUG] Successfully copied full image: {source_full_filename} -> {things_full_filename}")
+                except Exception as full_ex:
+                    print(f"[INFO] Full frame not found or failed to copy for {original_image_id}: {full_ex}")
             except Exception as img_ex:
                 print(f"[ERROR] Failed to copy image for ID {result['id']}: {img_ex}")            
                 traceback.print_exc()
@@ -725,6 +803,12 @@ def delete_selected_things_from_milvus_and_minio(embedding_ids: List[str]) -> in
                 try:
                     minio_client.remove_object(bucket_name, f"{image_id}.jpg")
                     print(f"[DEBUG] Deleted image: {image_id}.jpg")
+                    # Also delete the corresponding _full image if present
+                    try:
+                        minio_client.remove_object(bucket_name, f"{image_id}_full.jpg")
+                        print(f"[DEBUG] Deleted full image: {image_id}_full.jpg")
+                    except Exception as e_full:
+                        print(f"[INFO] No full image or failed to delete {image_id}_full.jpg: {e_full}")
                 except Exception as e:
                     print(f"[WARNING] Failed to delete image {image_id}.jpg from MinIO: {e}")
         
