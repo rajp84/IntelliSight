@@ -23,6 +23,7 @@ export interface SystemConfig {
   training_params: TrainingParams;
   library_file_extensions: string;
   hf_token?: string | null;
+  roboflow_api_key?: string | null;
   florence_model: string;
   dinov3_model: string;
   dinov3_dimension: number;
@@ -68,6 +69,11 @@ export class SystemService {
     const url = new URL(`${this.baseUrl}/library/file`, window.location.origin);
     url.searchParams.set('path', path);
     return url.toString();
+  }
+
+  // ------- Models -------
+  listModels() {
+    return this.http.get<{ items: Array<{ name: string; path: string }> }>(`${this.baseUrl}/models`);
   }
 
   uploadLibraryFile(file: File, path: string = ''): Observable<{ status: string; filename: string; path: string; size: number }> {

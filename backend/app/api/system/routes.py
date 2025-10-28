@@ -4,6 +4,7 @@ from pydantic import BaseModel, Field, ConfigDict
 from typing import Any, Dict, List, Optional
 from pathlib import Path
 import os
+import mimetypes
 
 from ...service.system_service import get_configuration as svc_get_configuration, save_configuration as svc_save_configuration
 
@@ -39,14 +40,15 @@ class ConfigurationModel(BaseModel):
     florence_model: str = Field(default="microsoft/Florence-2-large", description="Florence-2 model to use for object detection")
     dinov3_model: str = Field(default="facebook/dinov3-vitb16-pretrain-lvd1689m", description="DINOv3 model to use for embeddings")
     dinov3_dimension: int = Field(default=768, description="DINOv3 embedding dimension (auto-determined from model)")
+    media_directory: str = Field(default="~/ai_media", description="Directory to store trained models and exported media")
 
 
-@router.get("/system/config")
+@router.get("/config")
 def get_configuration() -> Dict[str, Any]:
     return svc_get_configuration()
 
 
-@router.post("/system/config")
+@router.post("/config")
 def save_configuration(config: ConfigurationModel) -> Dict[str, Any]:
     # Persist exactly what was provided (including optional fields)
     payload = config.model_dump()
@@ -73,7 +75,7 @@ def _ensure_within_root(root: Path, target: Path) -> None:
         raise HTTPException(status_code=400, detail="Path is outside of library root")
 
 
-@router.get("/system/library/list", response_model=LibraryListResponse)
+@router.get("/library/list", response_model=LibraryListResponse)
 def list_library(path: Optional[str] = Query(default="", description="Subpath relative to library root")) -> Any:
     cfg = svc_get_configuration()
     root_str = cfg.get("library_path")
@@ -122,7 +124,7 @@ def list_library(path: Optional[str] = Query(default="", description="Subpath re
         raise HTTPException(status_code=403, detail="Permission denied")
 
 
-@router.get("/system/library/file")
+@router.get("/library/file")
 def get_library_file(path: str = Query(..., description="File path relative to library root")):
     cfg = svc_get_configuration()
     root_str = cfg.get("library_path")
@@ -134,10 +136,14 @@ def get_library_file(path: str = Query(..., description="File path relative to l
     _ensure_within_root(root, target)
     if not target.exists() or not target.is_file():
         raise HTTPException(status_code=404, detail="File not found")
-    return FileResponse(str(target))
+    # Determine content type, with explicit support for .mov
+    mime_type, _ = mimetypes.guess_type(str(target))
+    if target.suffix.lower() == ".mov":
+        mime_type = "video/quicktime"
+    return FileResponse(str(target), media_type=mime_type)
 
 
-@router.post("/system/library/upload")
+@router.post("/library/upload")
 def upload_library_file(
     file: UploadFile = File(...),
     path: str = Query(default="", description="Target directory relative to library root")
@@ -192,7 +198,7 @@ def upload_library_file(
         raise HTTPException(status_code=500, detail=f"Failed to upload file: {str(e)}")
 
 
-@router.post("/system/library/folder")
+@router.post("/library/folder")
 def create_library_folder(
     name: str = Query(..., description="Folder name"),
     path: str = Query(default="", description="Parent directory relative to library root")
@@ -243,4 +249,22 @@ def create_library_folder(
 
 
 # -------- Training routes --------
-
+@router.get("/models")
+def list_models() -> Dict[str, Any]:
+    """List available model files (.pt) under <library_path>/(model|models)."""
+    cfg = svc_get_configuration()
+    lib = cfg.get("library_path")
+    if not lib:
+        raise HTTPException(status_code=400, detail="library_path is not configured")
+    root = Path(lib).expanduser()
+    out: list[dict] = []
+    for sub in ("model", "models"):
+        p = (root / sub)
+        if p.exists() and p.is_dir():
+            for f in sorted(p.rglob("*.pt")):
+                try:
+                    rel = str(f.relative_to(root))
+                except Exception:
+                    rel = str(f)
+                out.append({"name": f.name, "path": rel})
+    return {"items": out}

@@ -1,6 +1,6 @@
 services:
   intellisight-app:
-    image: 832471001844.dkr.ecr.us-east-1.amazonaws.com/aiplus/intellisight:0.1.2
+    image: 832471001844.dkr.ecr.us-east-1.amazonaws.com/aiplus/intellisight:0.1.4
     container_name: intellisight-app
     ports:
       - "5001:5001"
@@ -15,6 +15,8 @@ services:
       MONGO_HOST: mongo
       MILVUS_HOST: milvus
       MINIO_ENDPOINT: http://minio:9000
+      NVIDIA_VISIBLE_DEVICES: all
+      NVIDIA_DRIVER_CAPABILITIES: compute,utility,video
     networks: [aiplus-milvus-net]
 
   etcd:

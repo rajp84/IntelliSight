@@ -8,7 +8,7 @@ import logging
 from .socket.socket_manager import sio
 import socketio
 
-fastapi_app = FastAPI(title="AI+ GUI Template App")
+fastapi_app = FastAPI(title="AI+ IntelliSight")
 app = socketio.ASGIApp(sio, other_asgi_app=fastapi_app)
 
 # Ensure console logging for our app loggers
@@ -19,8 +19,7 @@ if not root_logger.handlers:
         format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
     )
 logging.getLogger("app").setLevel(logging.INFO)
-# Enable debug logging for testing and Milvus
-logging.getLogger("app.service.test_service_batched").setLevel(logging.DEBUG)
+# Enable debug logging for Milvus
 logging.getLogger("app.database.milvus").setLevel(logging.DEBUG)
 
 # === DEV ONLY CORS (disable in prod if serving same origin) ===
@@ -38,21 +37,24 @@ fastapi_app.add_middleware(GZipMiddleware, minimum_size=1024)
 
 # ---- API routes under /api ----
 from .api.routes import router as base_router
-from .api.example_1.routes import router as example_1_router
-from .api.example_2.routes import router as example_2_router
 from .api.system.routes import router as system_router
 from .api.train.routes import router as train_router
-from .api.test.routes import router as test_router
+from .api.train_model.routes import router as train_model_router
+from .api.things.routes import router as things_router
+from .api.models.routes import router as models_router
+from .api.process.routes import router as process_router
 from .database.connection_manager import init_connections, start_monitor, shutdown
 from .service.system_service import start_system_stats_broadcast
+from .workers.process_worker import get_worker
 
 ROUTER_PREFIX = "/api"
 fastapi_app.include_router(base_router, prefix=ROUTER_PREFIX)
-fastapi_app.include_router(example_1_router, prefix=ROUTER_PREFIX + "/example1")
-fastapi_app.include_router(example_2_router, prefix=ROUTER_PREFIX + "/example2")
-fastapi_app.include_router(system_router, prefix=ROUTER_PREFIX)
+fastapi_app.include_router(system_router, prefix=ROUTER_PREFIX + "/system")
 fastapi_app.include_router(train_router, prefix=ROUTER_PREFIX + "/train")
-fastapi_app.include_router(test_router, prefix=ROUTER_PREFIX + "/test")
+fastapi_app.include_router(train_model_router, prefix=ROUTER_PREFIX + "/train-model")
+fastapi_app.include_router(process_router, prefix=ROUTER_PREFIX + "/process")
+fastapi_app.include_router(things_router, prefix=ROUTER_PREFIX + "/things")
+fastapi_app.include_router(models_router, prefix=ROUTER_PREFIX + "/models")
 
 # ---- Startup/Shutdown: DB Connections ----
 @fastapi_app.on_event("startup")
@@ -65,12 +67,22 @@ async def _on_startup():
         start_system_stats_broadcast()
     except Exception as ex:
         logging.getLogger(__name__).warning("Failed to start system stats broadcast: %s", ex)
+    # start process worker
+    try:
+        await get_worker().start()
+    except Exception as ex:
+        logging.getLogger(__name__).warning("Failed to start process worker: %s", ex)
 
 
 @fastapi_app.on_event("shutdown")
 async def _on_shutdown():
     logging.getLogger(__name__).info("Shutting down connection monitor and databases...")
     await shutdown()
+    # stop process worker
+    try:
+        await get_worker().stop()
+    except Exception:
+        pass
 
 # ---- Static (Angular) files ----
 # In prod, we'll copy Angular dist to /app/static

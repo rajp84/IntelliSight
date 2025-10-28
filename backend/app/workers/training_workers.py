@@ -1,8 +1,11 @@
 from __future__ import annotations
 
 import asyncio
+import base64
+import io
 import json
 import logging
+import re
 import threading
 import time
 import uuid
@@ -22,7 +25,6 @@ from ..storage.minio_client import put_training_image_bytes, ensure_training_buc
 from ..service.system_service import get_configuration
 from ..socket.socket_manager import broadcast
 from ..utils.florence_utils import run_caption_task
-import re
 
 
 def extract_phrases_from_caption(caption_text: str, top_k: int = 5) -> str:
@@ -186,6 +188,24 @@ def embedding_worker(
                             unique_filename = f"{training_doc_id}_{mid}.jpg"
                         
                         put_training_image_bytes(str(training_doc_id), unique_filename, bio.getvalue(), content_type="image/jpeg")
+
+                        # Also upload the full frame image with the same ID and _full suffix
+                        try:
+                            full_bgr = batch_meta[idx].get("full_frame_bgr")
+                            if full_bgr is not None:
+                                full_pil = Image.fromarray(full_bgr[:, :, ::-1])
+                                full_bio = BytesIO()
+                                full_pil.save(full_bio, format="JPEG", quality=90)
+                                if image_id:
+                                    full_filename = f"{image_id}_full.jpg"
+                                else:
+                                    full_filename = f"{training_doc_id}_{mid}_full.jpg"
+                                put_training_image_bytes(str(training_doc_id), full_filename, full_bio.getvalue(), content_type="image/jpeg")
+                        except Exception as _mx_full:
+                            try:
+                                emit_log_callback(f"Failed to upload full frame for id {mid}: {_mx_full}")
+                            except Exception:
+                                pass
                     except Exception as _mx:
                         try:
                             emit_log_callback(f"Failed to upload image for id {mid}: {_mx}")
@@ -333,8 +353,6 @@ def detection_worker(
                             emit_log_callback(f"[AUTO DISCOVERY] Extracted phrases: '{discover_phrase_str}'")
                             
                             # Convert the frame image to base64 for UI display
-                            import base64
-                            import io
                             img_buffer = io.BytesIO()
                             imgs[0].save(img_buffer, format='JPEG', quality=85)
                             img_base64 = base64.b64encode(img_buffer.getvalue()).decode('utf-8')

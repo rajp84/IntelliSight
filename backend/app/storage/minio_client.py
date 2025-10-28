@@ -156,5 +156,107 @@ def get_things_image_bytes(filename: str) -> bytes:
     return data
 
 
+# -------- Testing buckets (per run) --------
+def testing_bucket_name(run_id: str) -> str:
+    base = f"testing-{run_id}".lower().strip()
+    sanitized = []
+    for ch in base:
+        if ch.isalnum() or ch == '-':
+            sanitized.append(ch)
+        elif ch in {'.', '_'}:
+            sanitized.append('-')
+        else:
+            sanitized.append('-')
+    name = ''.join(sanitized).strip('-')
+    if len(name) < 3:
+        name = (name + "---")[:3]
+    if len(name) > 63:
+        name = name[:63]
+    return name
+
+
+def ensure_testing_bucket(run_id: str) -> str:
+    bucket = testing_bucket_name(run_id)
+    ensure_bucket(bucket)
+    return bucket
+
+
+def put_testing_image_bytes(run_id: str, object_name: str, data: bytes, content_type: str = "image/jpeg") -> str:
+    bucket = ensure_testing_bucket(run_id)
+    return put_image_bytes(bucket, object_name, data, content_type)
+
+
+def get_testing_image_bytes(run_id: str, object_name: str) -> tuple[bytes, str]:
+    bucket = testing_bucket_name(run_id)
+    return get_object_bytes(bucket, object_name)
+
+def remove_testing_bucket(run_id: str) -> bool:
+    """Delete all objects and remove the testing bucket for a run. Returns True if removed or not present."""
+    client = get_client()
+    bucket = testing_bucket_name(run_id)
+    try:
+        if not client.bucket_exists(bucket):
+            return True
+        # remove all objects
+        for obj in client.list_objects(bucket, recursive=True):
+            try:
+                client.remove_object(bucket, obj.object_name)
+            except Exception:
+                pass
+        # remove bucket
+        client.remove_bucket(bucket)
+        return True
+    except Exception:
+        return False
+
+# Negatives bucket helpers
+def negatives_bucket_name() -> str:
+    return "negatives"
+
+
+def ensure_negatives_bucket() -> None:
+    client = get_client()
+    bucket = negatives_bucket_name()
+    try:
+        if not client.bucket_exists(bucket):
+            client.make_bucket(bucket)
+            print(f"[DEBUG] Created negatives bucket: {bucket}")
+    except S3Error as e:
+        print(f"[ERROR] Failed to create negatives bucket {bucket}: {e}")
+        raise
+
+
+def put_negative_image_bytes(object_name: str, data: bytes, content_type: str = "image/jpeg") -> str:
+    client = get_client()
+    ensure_negatives_bucket()
+    bio = BytesIO(data)
+    bio.seek(0)
+    client.put_object(negatives_bucket_name(), object_name, data=bio, length=len(data), content_type=content_type)
+    return f"{negatives_bucket_name()}/{object_name}"
+
+
+def list_negatives_objects() -> list[str]:
+    client = get_client()
+    ensure_negatives_bucket()
+    objs = client.list_objects(negatives_bucket_name(), recursive=True)
+    return [o.object_name for o in objs]
+
+
+def get_negative_image_bytes(object_name: str) -> tuple[bytes, str]:
+    return get_object_bytes(negatives_bucket_name(), object_name)
+
+
+def remove_negative_image(object_name: str) -> bool:
+    try:
+        client = get_client()
+        bucket = negatives_bucket_name()
+        if not client.bucket_exists(bucket):
+            return True
+        client.remove_object(bucket, object_name)
+        return True
+    except Exception:
+        return False
+
+
 
 

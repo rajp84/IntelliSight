@@ -38,3 +38,7 @@ scikit-image
 matplotlib
 
 minio>=7.2.7
+
+ultralytics
+albumentations
+roboflow

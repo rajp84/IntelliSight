@@ -16,6 +16,13 @@
                    placeholder="/path/to/library" />
           </div>
           <div>
+            <label class="block text-sm font-medium text-gray-700 mb-1">Roboflow API Key</label>
+            <input type="password" [(ngModel)]="config.roboflow_api_key" name="roboflow_api_key"
+                   class="block w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                   placeholder="rf_..." />
+            <p class="mt-1 text-xs text-gray-500">Used for Roboflow API access.</p>
+          </div>
+          <div>
             <label class="block text-sm font-medium text-gray-700 mb-1">File Extensions Filter</label>
             <input type="text" [(ngModel)]="config.library_file_extensions" name="library_file_extensions"
                    class="block w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"

@@ -1,14 +1,25 @@
-from fastapi import APIRouter, HTTPException, Query, Response
+from fastapi import APIRouter, HTTPException, Query, Response, UploadFile, File, Form
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Optional, List
+from pathlib import Path
+import cv2
+import numpy as np
+from PIL import Image
+import io
+import time
+import json
+import uuid
 
 from ...service.training_service import start_od_training, training_status, _STATE
-from ...database.training_repo import list_training_runs, delete_training_record, error_out_running_records
-from ...database.milvus import ensure_training_collection, update_embedding_labels, commit_embeddings_to_things, update_things_labels, delete_selected_things_from_milvus_and_minio
+from ...service.system_service import get_configuration
+from ...service.embedder_service import embed_image
+from ...database.training_repo import list_training_runs, delete_training_record, error_out_running_records, create_training_record, mark_training_status
+from ...database.milvus import ensure_training_collection, update_embedding_labels, commit_embeddings_to_things, update_things_labels, delete_selected_things_from_milvus_and_minio, insert_training_embeddings, create_collection
 from pymilvus import Collection, utility
-import json
-from ...storage.minio_client import get_training_image_bytes, training_bucket_name, get_client as get_minio_client, ensure_training_bucket, ensure_things_bucket, get_things_image_bytes
+from ...storage.minio_client import get_training_image_bytes, training_bucket_name, get_client as get_minio_client, ensure_training_bucket, ensure_things_bucket, get_things_image_bytes, put_training_image_bytes
+from ...database.mongo import insert_one as mongo_insert_one, find_many as mongo_find_many, find_one as mongo_find_one, delete_one as mongo_delete_one, delete_many as mongo_delete_many, drop_collection as mongo_drop_collection, update_one as mongo_update_one
+from bson import ObjectId  # type: ignore
 
 router = APIRouter()
 
@@ -31,6 +42,8 @@ class CommitToThingsRequest(BaseModel):
     embedding_ids: list[str]
 
 
+
+
 @router.post("")
 def start_training(req: StartTrainingRequest) -> Dict[str, Any]:
     extra = dict(req.extra_args or {})
@@ -48,6 +61,231 @@ def start_training(req: StartTrainingRequest) -> Dict[str, Any]:
     if not ok:
         raise HTTPException(status_code=409, detail="A training job is already running")
     return {"status": "started"}
+
+
+# -------- Manual annotation helpers --------
+class ManualStartResponse(BaseModel):
+    run_id: str
+
+
+@router.post("/manual/start")
+def manual_start(path: str = Query(..., description="File path relative to library root")) -> Dict[str, Any]:
+    """Create a training record and collection for manual annotation of a video, return run_id."""
+    cfg = get_configuration()
+    root_str = cfg.get("library_path")
+    if not root_str:
+        raise HTTPException(status_code=400, detail="library_path is not configured")
+    root = Path(root_str).expanduser().resolve()
+    video_path = (root / path).resolve()
+    # Enforce within root
+    try:
+        video_path.relative_to(root)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Path is outside of library root")
+    if not video_path.exists() or not video_path.is_file():
+        raise HTTPException(status_code=404, detail="File not found")
+    # Probe video
+    cap = cv2.VideoCapture(str(video_path))
+    if not cap.isOpened():
+        raise HTTPException(status_code=400, detail="Failed to open video")
+    fps = float(cap.get(cv2.CAP_PROP_FPS) or 30.0)
+    total = int(cap.get(cv2.CAP_PROP_FRAME_COUNT) or 0)
+    w = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH) or 0)
+    h = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT) or 0)
+    cap.release()
+    # Create training record
+    try:
+        # Use configured embedding dimension when creating the collection
+        try:
+            dinov3_dimension = int(cfg.get("dinov3_dimension", 768))
+        except Exception:
+            dinov3_dimension = 768
+        rec_id = create_training_record(
+            file_path=str(video_path),
+            file_name=video_path.name,
+            fps=fps,
+            width=w,
+            height=h,
+            total_frames=total,
+            training_params={"manual": True}
+        )
+        ensure_training_collection(str(rec_id), dim=dinov3_dimension)
+        return {"run_id": str(rec_id), "fps": fps, "total_frames": total, "width": w, "height": h}
+    except Exception as ex:
+        raise HTTPException(status_code=500, detail=f"Failed to start manual run: {ex}")
+
+
+@router.get("/manual/metadata")
+def manual_metadata(path: str = Query(..., description="File path relative to library root")) -> Dict[str, Any]:
+    """Return basic video metadata: fps, total frames, width, height."""
+    cfg = get_configuration()
+    root_str = cfg.get("library_path")
+    if not root_str:
+        raise HTTPException(status_code=400, detail="library_path is not configured")
+    root = Path(root_str).expanduser().resolve()
+    video_path = (root / path).resolve()
+    try:
+        video_path.relative_to(root)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Path is outside of library root")
+    if not video_path.exists() or not video_path.is_file():
+        raise HTTPException(status_code=404, detail="File not found")
+    cap = cv2.VideoCapture(str(video_path))
+    if not cap.isOpened():
+        raise HTTPException(status_code=400, detail="Failed to open video")
+    fps = float(cap.get(cv2.CAP_PROP_FPS) or 30.0)
+    total = int(cap.get(cv2.CAP_PROP_FRAME_COUNT) or 0)
+    w = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH) or 0)
+    h = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT) or 0)
+    cap.release()
+    return {"fps": fps, "total_frames": total, "width": w, "height": h}
+
+
+@router.post("/manual/crop")
+def manual_crop(
+    image: UploadFile = File(...),
+    path: str = Form(...),
+    frame_index: int = Form(...),
+    bbox: str = Form(...),
+    label: str = Form(...),
+    run_id: str | None = Form(default=None),
+) -> Dict[str, Any]:
+    """Accept a user-labeled crop image, embed it, and insert into current manual run collection.
+
+    A run is implicitly created if not present by calling manual_start.
+    """
+    try:
+
+        cfg = get_configuration()
+        root_str = cfg.get("library_path")
+        if not root_str:
+            raise HTTPException(status_code=400, detail="library_path is not configured")
+        root = Path(root_str).expanduser().resolve()
+        video_path = (root / path).resolve()
+        try:
+            video_path.relative_to(root)
+        except ValueError:
+            raise HTTPException(status_code=400, detail="Path is outside of library root")
+        if not video_path.exists():
+            raise HTTPException(status_code=404, detail="File not found")
+
+        # Determine or create a manual run for this path
+        if not run_id:
+            rec_id = create_training_record(
+                file_path=str(video_path),
+                file_name=video_path.name,
+                fps=None,
+                width=0,
+                height=0,
+                total_frames=0,
+                training_params={"manual": True}
+            )
+            run_id = str(rec_id)
+            # Dimension will be validated below after computing embedding
+        else:
+            # Will validate dimension below
+            pass
+
+        # Read image bytes
+        img_bytes = image.file.read()
+        pil = Image.open(io.BytesIO(img_bytes)).convert('RGB')
+        # Embed
+        emb = embed_image(pil)
+        emb_list = emb.reshape(1, -1).tolist()
+        emb_dim = len(emb_list[0]) if emb_list and len(emb_list[0]) > 0 else 0
+        if emb_dim <= 0:
+            raise HTTPException(status_code=500, detail="Invalid embedding vector")
+
+        # Ensure collection exists and matches embedding dimension; recreate if mismatched
+        try:
+            coll_name = f"training_{run_id}"
+            if utility.has_collection(coll_name):
+                coll = Collection(coll_name)
+                # find embedding field and its dim
+                dim_found = None
+                for field in coll.schema.fields:
+                    if getattr(field, 'name', '') == 'embedding':
+                        dim_found = (field.params or {}).get('dim')
+                        break
+                if dim_found and int(dim_found) != int(emb_dim):
+                    # Drop and recreate with correct dim
+                    utility.drop_collection(coll_name)
+                    create_collection(coll_name, dim=emb_dim, description=f"Embeddings for training run {run_id}")
+            else:
+                # Create fresh
+                create_collection(coll_name, dim=emb_dim, description=f"Embeddings for training run {run_id}")
+        except Exception as mm_ex:
+            # As a fallback try ensure with emb_dim
+            try:
+                ensure_training_collection(run_id, dim=emb_dim)
+            except Exception:
+                raise HTTPException(status_code=500, detail=f"Failed to ensure training collection: {mm_ex}")
+        # Parse bbox JSON (pixels) for later editing as [x1, y1, x2, y2]
+        bbox_list = None
+        try:
+            bbox_obj = json.loads(bbox) if bbox else None
+            if isinstance(bbox_obj, dict):
+                x1 = int(round(float(bbox_obj.get("x1", 0))))
+                y1 = int(round(float(bbox_obj.get("y1", 0))))
+                x2 = int(round(float(bbox_obj.get("x2", 0))))
+                y2 = int(round(float(bbox_obj.get("y2", 0))))
+                bbox_list = [x1, y1, x2, y2]
+            elif isinstance(bbox_obj, (list, tuple)) and len(bbox_obj) == 4:
+                bbox_list = [int(round(float(v))) for v in bbox_obj]
+        except Exception:
+            bbox_list = None
+
+        payload = {
+            "label": label,
+            "frame_index": int(frame_index),
+            "source_path": str(path),
+            **({"bbox": bbox_list} if bbox_list else {}),
+        }
+        # Store image to MinIO and include image_id in payload
+        image_id = f"{int(time.time()*1000)}"
+        put_training_image_bytes(run_id, f"{image_id}.jpg", img_bytes, "image/jpeg")
+        payload["image_id"] = image_id
+        # Also save the full frame for later crop edits
+        try:
+            cap2 = cv2.VideoCapture(str(video_path))
+            try:
+                # Seek to requested frame index if supported
+                try:
+                    cap2.set(cv2.CAP_PROP_POS_FRAMES, int(frame_index))
+                except Exception:
+                    pass
+                ok2, frame_bgr = cap2.read()
+                if ok2 and frame_bgr is not None:
+                    ok_enc, enc = cv2.imencode('.jpg', frame_bgr, [int(cv2.IMWRITE_JPEG_QUALITY), 90])
+                    if ok_enc:
+                        full_bytes = bytes(enc)
+                        put_training_image_bytes(run_id, f"{image_id}_full.jpg", full_bytes, "image/jpeg")
+                        #payload["full_image_id"] = f"{image_id}_full"
+            finally:
+                cap2.release()
+        except Exception:
+            # Saving full frame is best-effort; continue if it fails
+            pass
+        ids = insert_training_embeddings(run_id, embeddings=emb_list, payloads=[json.dumps(payload)])
+        return {"run_id": run_id, "inserted": len(ids), "embedding_ids": ids}
+    except HTTPException:
+        raise
+    except Exception as ex:
+        raise HTTPException(status_code=500, detail=f"Failed to accept manual crop: {ex}")
+
+
+@router.post("/manual/complete")
+def manual_complete(run_id: str = Query(...)) -> Dict[str, Any]:
+    """Mark the manual training run as completed so it shows in results page like others."""
+    try:
+        try:
+            rid = ObjectId(run_id)
+        except Exception:
+            rid = run_id
+        mark_training_status(rid, "completed")
+        return {"status": "ok"}
+    except Exception as ex:
+        raise HTTPException(status_code=500, detail=f"Failed to complete run: {ex}")
 
 
 @router.get("/status")
@@ -218,7 +456,9 @@ def list_run_embeddings(run_id: str, limit: int = Query(200, ge=1, le=10000), of
 def get_run_image(run_id: str, image_id: str):
     """Serve a stored crop image from MinIO by training run and image id (e.g., 123.jpg)."""
     try:
-        data, content_type = get_training_image_bytes(run_id, image_id)
+        # Backward compatible: if extension not provided, default to .jpg
+        object_name = image_id if (image_id.lower().endswith('.jpg') or image_id.lower().endswith('.jpeg')) else f"{image_id}.jpg"
+        data, content_type = get_training_image_bytes(run_id, object_name)
         return Response(content=data, media_type=content_type)
     except Exception as ex:
         raise HTTPException(status_code=404, detail=f"Image not found: {ex}")
@@ -258,201 +498,3 @@ def commit_to_things_endpoint(run_id: str, req: CommitToThingsRequest) -> Dict[s
         return {"committed": committed_count}
     except Exception as ex:
         raise HTTPException(status_code=500, detail=f"Failed to commit to things: {ex}")
-
-@router.post("/things/labels")
-def update_things_labels_endpoint(req: UpdateLabelsRequest) -> Dict[str, Any]:
-    """Update labels for multiple embeddings in the 'things' collection."""
-    try:
-        updated_count = update_things_labels(req.embedding_ids, req.label)
-        return {"updated": updated_count}
-    except Exception as ex:
-        raise HTTPException(status_code=500, detail=f"Failed to update things labels: {ex}")
-
-@router.delete("/things/selected")
-def delete_selected_things(req: CommitToThingsRequest) -> Dict[str, Any]:
-    """Delete selected embeddings from the 'things' collection and their images from MinIO."""
-    try:
-        deleted_count = delete_selected_things_from_milvus_and_minio(req.embedding_ids)
-        return {"deleted": deleted_count}
-    except Exception as ex:
-        raise HTTPException(status_code=500, detail=f"Failed to delete selected things: {ex}")
-
-@router.get("/things/search")
-def search_things_embeddings(
-    query: str = Query(..., description="Search query for label field"),
-    limit: int = Query(200, ge=1, le=10000), 
-    offset: int = Query(0, ge=0)
-) -> Dict[str, Any]:
-    """Search embeddings in the 'things' collection by label."""
-    try:
-        from pymilvus import Collection, utility
-        
-        collection_name = "things"
-        
-        # Check if collection exists
-        if not utility.has_collection(collection_name):
-            return {"items": [], "total": 0}
-        
-        collection = Collection(collection_name)
-        collection.load()
-        
-        try:
-            # Query all data first, then filter by label and apply pagination
-            res = collection.query(expr="", output_fields=["id", "payload"], limit=16384)  # type: ignore
-            items = []
-            for r in res:
-                pid = r.get("id")
-                payload = r.get("payload")
-                try:
-                    payload_obj = json.loads(payload) if isinstance(payload, str) else payload
-                except Exception:
-                    payload_obj = {"raw": payload}
-                
-                # Check if label matches search query (case-insensitive)
-                label = payload_obj.get("label", "") if isinstance(payload_obj, dict) else ""
-                if query.lower() in label.lower():
-                    # Convert Milvus ID to string to avoid JavaScript integer precision issues
-                    items.append({"id": str(pid), "payload": payload_obj})
-            
-            # Sort by frame number (frame_index in payload) or by original_id if available
-            def get_sort_key(item):
-                payload = item.get("payload", {})
-                if isinstance(payload, dict):
-                    # Use frame_index if available, otherwise use original_id, otherwise use 0
-                    return payload.get("frame_index", payload.get("original_id", 0))
-                return 0
-            
-            items.sort(key=get_sort_key)
-            
-            # Apply pagination after sorting
-            start_idx = offset
-            end_idx = offset + limit
-            paginated_items = items[start_idx:end_idx]
-            
-            return {"items": paginated_items, "total": len(items)}
-        finally:
-            collection.release()
-            
-    except Exception as ex:
-        raise HTTPException(status_code=500, detail=f"Failed to search things embeddings: {ex}")
-
-@router.get("/things")
-def get_things_embeddings(limit: int = Query(200, ge=1, le=10000), offset: int = Query(0, ge=0)) -> Dict[str, Any]:
-    """Get all embeddings from the 'things' collection."""
-    try:
-        from pymilvus import Collection, utility
-        
-        collection_name = "things"
-        
-        # Check if collection exists
-        if not utility.has_collection(collection_name):
-            return {"items": [], "total": 0}
-        
-        collection = Collection(collection_name)
-        collection.load()
-        
-        try:
-            # Query all data first, then sort by frame number and apply pagination
-            res = collection.query(expr="", output_fields=["id", "payload"], limit=16384)  # type: ignore
-            items = []
-            for r in res:
-                pid = r.get("id")
-                payload = r.get("payload")
-                try:
-                    payload_obj = json.loads(payload) if isinstance(payload, str) else payload
-                except Exception:
-                    payload_obj = {"raw": payload}
-                # Convert Milvus ID to string to avoid JavaScript integer precision issues
-                items.append({"id": str(pid), "payload": payload_obj})
-            
-            # Sort by frame number (frame_index in payload) or by original_id if available
-            def get_sort_key(item):
-                payload = item.get("payload", {})
-                if isinstance(payload, dict):
-                    # Use frame_index if available, otherwise use original_id, otherwise use 0
-                    return payload.get("frame_index", payload.get("original_id", 0))
-                return 0
-            
-            items.sort(key=get_sort_key)
-            
-            # Apply pagination after sorting
-            start_idx = offset
-            end_idx = offset + limit
-            paginated_items = items[start_idx:end_idx]
-            
-            return {"items": paginated_items, "total": len(items)}
-        finally:
-            collection.release()
-            
-    except Exception as ex:
-        raise HTTPException(status_code=500, detail=f"Failed to get things embeddings: {ex}")
-
-@router.get("/things/image/{filename}")
-def get_things_image(filename: str) -> Response:
-    """Get an image from the things collection by filename."""
-    try:
-        print(f"[DEBUG] Requesting things image: {filename}")
-        
-        # For things collection, images are stored with image_id as filename
-        # We need to get the image from MinIO using the things bucket
-        bucket_name = "things"  # Use a dedicated things bucket
-        
-        # Ensure the things bucket exists
-        ensure_things_bucket()
-        
-        # Get image from MinIO
-        image_data = get_things_image_bytes(filename)
-        
-        print(f"[DEBUG] Successfully retrieved things image: {filename} ({len(image_data)} bytes)")
-        return Response(content=image_data, media_type="image/jpeg")
-    except Exception as ex:
-        print(f"[ERROR] Failed to get things image {filename}: {ex}")
-        raise HTTPException(status_code=404, detail=f"Image not found: {ex}")
-
-@router.delete("/things")
-def delete_all_things() -> Dict[str, Any]:
-    """Delete all things from the 'things' collection and bucket."""
-    try:
-        from pymilvus import utility
-        from ...storage.minio_client import get_client as get_minio_client
-        
-        collection_name = "things"
-        bucket_name = "things"
-        
-        # Check if collection exists
-        if not utility.has_collection(collection_name):
-            return {"message": "Things collection does not exist", "deleted": 0}
-        
-        # Get collection info before deletion
-        collection = Collection(collection_name)
-        collection.load()
-        total_count = collection.num_entities
-        
-        # Drop the collection
-        utility.drop_collection(collection_name)
-        
-        # Delete all objects from the things bucket
-        minio_client = get_minio_client()
-        try:
-            # List all objects in the things bucket
-            objects = minio_client.list_objects(bucket_name, recursive=True)
-            object_count = 0
-            for obj in objects:
-                minio_client.remove_object(bucket_name, obj.object_name)
-                object_count += 1
-            
-            # Remove the bucket itself
-            minio_client.remove_bucket(bucket_name)
-        except Exception as bucket_ex:
-            # If bucket doesn't exist or is already empty, that's fine
-            print(f"[INFO] Things bucket cleanup: {bucket_ex}")
-        
-        return {
-            "message": f"Successfully deleted all things",
-            "deleted_embeddings": total_count,
-            "deleted_images": object_count
-        }
-        
-    except Exception as ex:
-        raise HTTPException(status_code=500, detail=f"Failed to delete all things: {ex}")
-

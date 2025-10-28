@@ -1,0 +1,40 @@
+# build Angular frontend
+FROM node:20-alpine AS frontend-build
+WORKDIR /app
+COPY frontend/package*.json ./
+RUN npm ci
+COPY frontend/ .
+
+RUN npm run build -- --configuration production
+
+# Python backend
+FROM 832471001844.dkr.ecr.us-east-1.amazonaws.com/aiplus/base:ubuntu22.04-cuda12.8-trt10.10 AS backend
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    tini cuda-toolkit-12-1 && \
+    rm -rf /var/lib/apt/lists/*
+
+WORKDIR /app
+
+# Install backend deps
+COPY backend/requirements/requirements.cuda128.txt ./backend/requirements/requirements.txt
+RUN pip install --no-cache-dir -r backend/requirements/requirements.txt
+
+RUN pip install /usr/local/TensorRT-10.10.0.31/python/tensorrt-10.10.0.31-cp310-none-linux_x86_64.whl
+# Copy backend code
+COPY backend/app ./backend/app
+
+# Copy Angular build output into /app/backend/static
+COPY --from=frontend-build /app/dist/frontend/browser /app/backend/static
+
+# Set PYTHONPATH to include the backend directory
+ENV PYTHONPATH=/app/backend
+
+RUN mkdir -p /app/media
+
+# Expose and run
+EXPOSE 5001
+ENTRYPOINT ["/usr/bin/tini", "--"]
+CMD ["uvicorn", "backend.app.main:app", "--host", "0.0.0.0", "--port", "5001"]

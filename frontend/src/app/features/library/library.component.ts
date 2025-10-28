@@ -1,11 +1,11 @@
 import { Component } from '@angular/core';
+import { HttpClient } from '@angular/common/http';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { SystemService } from '../../core/services/system.service';
 import { TrainingService } from '../../core/services/training.service';
 import { SocketService } from '../../core/services/socket.service';
 import { Router } from '@angular/router';
-import { TestingService } from '../../core/services/testing.service';
 
 @Component({
   selector: 'app-library',
@@ -30,6 +30,10 @@ export class LibraryComponent {
   error = '';
   previewUrl: string | null = null;
   previewType: 'image' | 'video' | 'other' | null = null;
+  previewMimeType: string | null = null;
+  // Model testing
+  models: Array<{ name: string; path: string; displayName?: string; ts?: number }> = [];
+  selectedModelPath: string | null = null;
   selectedFileRelPath: string | null = null;
   trainingState: 'idle' | 'running' | 'completed' | 'failed' = 'idle';
   trainingProgress = 0;
@@ -56,12 +60,16 @@ export class LibraryComponent {
   similarityThreshold = 0.7;
   batchSize = 32;
   useBatching = true;
+  modelTestThreshold = 0.6;
+  // Process dropdown
+  showProcessMenu = false;
+  libraryRoot: string | null = null;
 
   constructor(private readonly system: SystemService,
               private readonly training: TrainingService,
               private readonly socket: SocketService,
               private readonly router: Router,
-              private readonly testing: TestingService) {}
+              private readonly http: HttpClient) {}
 
   ngOnInit(): void {
     this.load();
@@ -70,6 +78,88 @@ export class LibraryComponent {
       this.trainingState = status.state;
       this.trainingProgress = status.progress ?? 0;
     });
+    // Load models list
+    this.system.getConfig().subscribe({
+      next: (cfg: any) => {
+        this.libraryRoot = cfg?.library_path || this.libraryRoot;
+        this.system.listModels().subscribe({
+          next: (res) => {
+            const items = (res.items || []) as Array<{ name: string; path: string }>
+            // map to include timestamp and displayName, then sort newest first
+            const mapped = items.map(m => {
+              const ts = this.parseModelTimestamp(m.name);
+              const record: { name: string; path: string; ts?: number; displayName?: string } = { ...m };
+              if (ts) {
+                record.ts = ts;
+                record.displayName = this.formatModelDisplayName(m.name, ts);
+              } else {
+                record.displayName = m.name;
+              }
+              return record;
+            }).sort((a, b) => (b.ts ?? 0) - (a.ts ?? 0));
+            this.models = mapped;
+            if (this.models.length > 0) {
+              this.selectedModelPath = this.models[0].path;
+            }
+          },
+          error: () => {}
+        });
+      }, error: () => {}
+    });
+  }
+
+  // --- Processing (Jobs) ---
+  toggleProcessMenu(): void {
+    this.showProcessMenu = !this.showProcessMenu;
+  }
+
+  private generateJobId(type: string): string {
+    const rand = Math.random().toString(36).slice(2, 8);
+    return `${type}-${Date.now()}-${rand}`;
+  }
+
+  startProcess(type: 'detection' | 'similarity_search' | 'find_anything'): void {
+    if (!this.selectedFileRelPath) return;
+    const jobId = this.generateJobId(type === 'detection' ? 'job' : (type === 'similarity_search' ? 'sim' : 'fa'));
+    const mediaFullPath = this.libraryRoot ? `${this.libraryRoot.replace(/\\/g,'/')}/${this.selectedFileRelPath}` : this.selectedFileRelPath;
+    const body: any = {
+      job_id: jobId,
+      media_file: mediaFullPath,
+      type,
+      callback_url: `${location.origin}/api/callback`
+    };
+    this.http.post('/api/process', body).subscribe({
+      next: () => {
+        this.showProcessMenu = false;
+        // Navigate to jobs list so user can monitor
+        this.router.navigateByUrl('/jobs');
+      },
+      error: () => {
+        this.showProcessMenu = false;
+      }
+    });
+  }
+
+  private parseModelTimestamp(name: string): number | null {
+    // Expect filenames like best_1697400000.pt or containing a 10-digit epoch seconds
+    const m = name.match(/(\d{10})/);
+    if (!m) return null;
+    const sec = Number(m[1]);
+    if (!isFinite(sec) || sec <= 0) return null;
+    return sec * 1000; // ms
+  }
+
+  private pad2(n: number): string { return n < 10 ? `0${n}` : String(n); }
+
+  private formatModelDisplayName(name: string, tsMs: number): string {
+    const d = new Date(tsMs);
+    const yyyy = d.getFullYear();
+    const mm = this.pad2(d.getMonth() + 1);
+    const dd = this.pad2(d.getDate());
+    const HH = this.pad2(d.getHours());
+    const MM = this.pad2(d.getMinutes());
+    const SS = this.pad2(d.getSeconds());
+    return `${name} (${yyyy}-${mm}-${dd} ${HH}:${MM}:${SS})`;
   }
 
   load(path: string = ''): void {
@@ -120,13 +210,22 @@ export class LibraryComponent {
     this.selectedFileRelPath = this.currentPath ? this.currentPath + '/' + entry.name : entry.name;
     const ext = entry.name.split('.').pop()?.toLowerCase() ?? '';
     const imageExt = ['png', 'jpg', 'jpeg', 'gif', 'webp', 'svg'];
-    const videoExt = ['mp4', 'webm', 'ogg'];
+    const videoExt = ['mp4', 'webm', 'ogg', 'mov'];
     if (imageExt.includes(ext)) {
       this.previewType = 'image';
+      this.previewMimeType = null;
     } else if (videoExt.includes(ext)) {
       this.previewType = 'video';
+      const mimeByExt: Record<string, string> = {
+        mp4: 'video/mp4',
+        webm: 'video/webm',
+        ogg: 'video/ogg',
+        mov: 'video/quicktime',
+      };
+      this.previewMimeType = mimeByExt[ext] ?? null;
     } else {
       this.previewType = 'other';
+      this.previewMimeType = null;
     }
     this.previewUrl = url;
   }
@@ -134,6 +233,7 @@ export class LibraryComponent {
   clearPreview(): void {
     this.previewUrl = null;
     this.previewType = null;
+    this.previewMimeType = null;
     this.selectedFileRelPath = null;
   }
 
@@ -226,18 +326,15 @@ export class LibraryComponent {
     });
   }
 
-  startTesting(): void {
+  openAnnotater(): void {
     if (!this.selectedFileRelPath) return;
-    this.testing.startTest(this.selectedFileRelPath, this.similarityThreshold, this.batchSize, this.useBatching).subscribe({
-      next: (response) => {
-        console.log('Testing started:', response);
-        this.router.navigateByUrl('/tester');
-      },
-      error: (err: unknown) => {
-        console.error(err);
-      }
-    });
+    const enc = encodeURIComponent(this.selectedFileRelPath);
+    this.router.navigateByUrl(`/annotater?path=${enc}`);
   }
+
+  startTesting(): void { /* removed testing feature */ }
+
+  startModelTest(): void { /* removed testing feature */ }
 
   // Upload functionality
   openUploadModal(): void {

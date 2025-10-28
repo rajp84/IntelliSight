@@ -42,8 +42,22 @@ docker build -t intellisight:latest .
 docker run -d --name intellisight-app --network host --gpus all intellisight:latest
 ```
 
+# Build image and push to ECR
+## cuda11.8, TRT8
+```
+VERSION=0.1.4
+aws ecr get-login-password --region us-east-1 | docker login --username AWS --password-stdin 832471001844.dkr.ecr.us-east-1.amazonaws.com
+docker build --platform linux/amd64 --provenance=false --sbom=false -t 832471001844.dkr.ecr.us-east-1.amazonaws.com/aiplus/intellisight:$VERSION .
+docker push 832471001844.dkr.ecr.us-east-1.amazonaws.com/aiplus/intellisight:$VERSION
+```
 
-
+## cuda12.8, TRT10
+```
+VERSION=0.1.4
+aws ecr get-login-password --region us-east-1 | docker login --username AWS --password-stdin 832471001844.dkr.ecr.us-east-1.amazonaws.com
+docker build --platform linux/amd64 --provenance=false --sbom=false -f Dockerfile.cuda128 -t 832471001844.dkr.ecr.us-east-1.amazonaws.com/aiplus/intellisight:$VERSION .
+docker push 832471001844.dkr.ecr.us-east-1.amazonaws.com/aiplus/intellisight:$VERSION
+```
 
 
 # Setup to run training

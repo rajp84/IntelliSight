@@ -2,145 +2,324 @@
   <!-- Header with title and controls -->
   <div class="flex flex-col sm:flex-row sm:items-center justify-between mb-4 gap-3">
     <h2 class="text-lg font-semibold text-gray-900">My Things</h2>
-    
+
+  <div class="border-b border-gray-200 mb-2">
+    <nav class="-mb-px flex space-x-4">
+      <button (click)="switchTab('things')" [class.border-blue-500]="activeTab==='things'" [class.text-blue-600]="activeTab==='things'"
+              class="whitespace-nowrap py-2 px-3 border-b-2 font-medium text-sm">Things</button>
+      <button (click)="switchTab('negatives')" [class.border-blue-500]="activeTab==='negatives'" [class.text-blue-600]="activeTab==='negatives'"
+              class="whitespace-nowrap py-2 px-3 border-b-2 font-medium text-sm">Negatives</button>
+    </nav>
+  </div>
+
+  
     <div class="flex items-center space-x-3">
-      
-      
+
+
+      <!-- Train Model Button -->
+      <button *ngIf="!loading && (items.length > 0 || groups.length > 0)" routerLink="/model-trainer"
+        class="px-3 py-1 text-xs rounded bg-blue-600 text-white hover:bg-blue-700">Train Model</button>
+
       <!-- Delete All Button -->
-      <button *ngIf="!loading && items.length > 0" 
-              (click)="openDeleteAllModal()"
-              class="px-3 py-1 text-xs rounded border border-red-300 bg-white hover:bg-red-50 text-red-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center"
-              [disabled]="isDeletingAll">
-        <svg *ngIf="isDeletingAll" class="animate-spin h-3 w-3 text-red-700 mr-1" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+      <button *ngIf="!loading && items.length > 0" (click)="openDeleteAllModal()"
+        class="px-3 py-1 text-xs rounded border border-red-300 bg-white hover:bg-red-50 text-red-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center"
+        [disabled]="isDeletingAll">
+        <svg *ngIf="isDeletingAll" class="animate-spin h-3 w-3 text-red-700 mr-1" xmlns="http://www.w3.org/2000/svg"
+          fill="none" viewBox="0 0 24 24">
           <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
-          <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+          <path class="opacity-75" fill="currentColor"
+            d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z">
+          </path>
         </svg>
-        <svg *ngIf="!isDeletingAll" class="h-3 w-3 text-red-700 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path>
+        <svg *ngIf="!isDeletingAll" class="h-3 w-3 text-red-700 mr-1" fill="none" stroke="currentColor"
+          viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+            d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16">
+          </path>
         </svg>
         {{ isDeletingAll ? 'Deleting...' : 'Delete All' }}
       </button>
     </div>
   </div>
-  
-  <div class="flex items-center justify-between mb-3">
+
+
+  <div *ngIf="activeTab==='things'" class="flex items-center justify-between mb-3">
     <div class="text-sm text-gray-700">
-        <div *ngIf="loading" class="text-sm text-gray-500">Loading things...</div>
-        <div *ngIf="!loading && displayItems.length === 0 && searchQuery.length < 2" class="text-sm text-gray-500">No things found. Commit some embeddings from training results to see them here.</div>
-        <div *ngIf="!loading && displayItems.length === 0 && searchQuery.length >= 2" class="text-sm text-gray-500">No results found for "{{ searchQuery }}"</div>
-        <div *ngIf="!loading && displayItems.length > 0 && searchQuery.length < 2" class="mb-2 text-sm text-gray-600">Total loaded: {{ items.length }} things</div>
-        <div *ngIf="!loading && displayItems.length > 0 && searchQuery.length >= 2" class="mb-2 text-sm text-gray-600">{{ searchResults.length }} result(s) for "{{ searchQuery }}"</div>
+      <div *ngIf="loading" class="text-sm text-gray-500">Loading things...</div>
+      <div *ngIf="!loading && displayItems.length === 0 && searchQuery.length < 2" class="text-sm text-gray-500">No
+        things found. Commit some embeddings from training results to see them here.</div>
+      <div *ngIf="!loading && displayItems.length === 0 && searchQuery.length >= 2" class="text-sm text-gray-500">No
+        results found for "{{ searchQuery }}"</div>
+      <div *ngIf="!loading && displayItems.length > 0 && searchQuery.length < 2" class="mb-2 text-sm text-gray-600">
+        Total loaded: {{ items.length }} things</div>
+      <div *ngIf="!loading && displayItems.length > 0 && searchQuery.length >= 2" class="mb-2 text-sm text-gray-600">{{
+        searchResults.length }} result(s) for "{{ searchQuery }}"</div>
     </div>
-     <!-- Search Bar -->
-     <div class="relative w-full sm:w-80">
-       <input 
-         type="text" 
-         [(ngModel)]="searchQuery"
-         (input)="onSearchInput($event)"
-         placeholder="Search by label..."
-         class="w-full px-4 py-1 pl-10 pr-4 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-       />
+    <!-- Search Bar -->
+    <div class="relative w-full sm:w-80">
+      <input type="text" [(ngModel)]="searchQuery" (input)="onSearchInput($event)" placeholder="Search by label..."
+        class="w-full px-4 py-1 pl-10 pr-4 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500" />
       <div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
         <svg *ngIf="!isSearching" class="h-5 w-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path>
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+            d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path>
         </svg>
-        <svg *ngIf="isSearching" class="animate-spin h-5 w-5 text-gray-400" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+        <svg *ngIf="isSearching" class="animate-spin h-5 w-5 text-gray-400" xmlns="http://www.w3.org/2000/svg"
+          fill="none" viewBox="0 0 24 24">
           <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
-          <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+          <path class="opacity-75" fill="currentColor"
+            d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z">
+          </path>
         </svg>
       </div>
-      <button 
-        *ngIf="searchQuery.length > 0"
-        (click)="clearSearch()"
-        class="absolute inset-y-0 right-0 pr-3 flex items-center text-gray-400 hover:text-gray-600"
-      >
+      <button *ngIf="searchQuery.length > 0" (click)="clearSearch()"
+        class="absolute inset-y-0 right-0 pr-3 flex items-center text-gray-400 hover:text-gray-600">
         <svg class="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
           <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
         </svg>
       </button>
     </div>
   </div>
-  
   <!-- Sticky selection controls container -->
-  <div *ngIf="!loading && displayItems.length > 0" 
-       class="sticky top-0 z-30 bg-white border-b border-gray-200 shadow-sm mb-4">
-    <div class="px-4 py-3 flex items-center justify-between">
+  <div *ngIf="activeTab==='things' && !loading && displayItems.length > 0"
+    class="sticky top-0 z-30 bg-white border-b border-gray-200 shadow-sm mb-4 p-1">
+    <div class="px-4 h-12 flex items-center justify-between">
       <div class="text-sm text-gray-600">
         <span *ngIf="selectedItems.size === 0">Click cards to select</span>
         <span *ngIf="selectedItems.size > 0">{{ selectedItems.size }} item(s) selected</span>
       </div>
       <div class="flex items-center space-x-2">
-        <button *ngIf="selectedItems.size > 0" 
-                (click)="clearSelection()" 
-                [disabled]="savingLabel || deletingSelected"
-                class="px-3 py-1 text-sm text-gray-600 hover:text-gray-800 disabled:opacity-50 disabled:cursor-not-allowed">
+        <button *ngIf="selectedItems.size > 0" (click)="clearSelection()" [disabled]="savingLabel || deletingSelected"
+          class="px-3 py-0.5 text-sm text-gray-600 hover:text-gray-800 disabled:opacity-50 disabled:cursor-not-allowed">
           Clear Selection
         </button>
-        <button *ngIf="selectedItems.size > 0" 
-                (click)="openEditLabelModal()" 
-                [disabled]="savingLabel || deletingSelected"
-                class="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 text-sm disabled:opacity-50 disabled:cursor-not-allowed">
+        <button *ngIf="selectedItems.size > 0" (click)="openEditLabelModal()"
+          [disabled]="savingLabel || deletingSelected"
+          class="px-4 py-0.5 bg-blue-600 text-white rounded hover:bg-blue-700 text-sm disabled:opacity-50 disabled:cursor-not-allowed">
           Edit Label
         </button>
-        <button *ngIf="selectedItems.size > 0" 
-                (click)="deleteSelected()" 
-                [disabled]="savingLabel || deletingSelected"
-                class="px-4 py-2 bg-red-600 text-white rounded hover:bg-red-700 text-sm disabled:opacity-50 disabled:cursor-not-allowed flex items-center">
-          <svg *ngIf="deletingSelected" class="animate-spin -ml-1 mr-2 h-4 w-4 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+        <button *ngIf="selectedItems.size > 0" (click)="groupSelected()"
+          [disabled]="creatingGroup || savingLabel || deletingSelected || (selectedItems.size < 2 && !selectedGroupId)"
+          class="px-4 py-0.5 bg-emerald-600 text-white rounded hover:bg-emerald-700 text-sm disabled:opacity-50 disabled:cursor-not-allowed flex items-center">
+          <svg *ngIf="creatingGroup" class="animate-spin -ml-1 mr-2 h-4 w-4 text-white"
+            xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
             <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
-            <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+            <path class="opacity-75" fill="currentColor"
+              d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z">
+            </path>
+          </svg>
+          {{ creatingGroup ? 'Working...' : (selectedGroupId ? 'Add To Group' : 'Group Together') }}
+        </button>
+        <button *ngIf="selectedItems.size === 1" (click)="openEditCropModal()"
+          class="px-4 py-0.5 bg-amber-600 text-white rounded hover:bg-amber-700 text-sm disabled:opacity-50 disabled:cursor-not-allowed">
+          Edit Crop
+        </button>
+        <button *ngIf="selectedItems.size > 0" (click)="deleteSelected()" [disabled]="savingLabel || deletingSelected"
+          class="px-4 py-0.5 bg-red-600 text-white rounded hover:bg-red-700 text-sm disabled:opacity-50 disabled:cursor-not-allowed flex items-center">
+          <svg *ngIf="deletingSelected" class="animate-spin -ml-1 mr-2 h-4 w-4 text-white"
+            xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+            <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+            <path class="opacity-75" fill="currentColor"
+              d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z">
+            </path>
           </svg>
           <svg *ngIf="!deletingSelected" class="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path>
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+              d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16">
+            </path>
           </svg>
           {{ deletingSelected ? 'Deleting...' : 'Delete' }}
         </button>
+        
       </div>
     </div>
   </div>
-  
-  <!-- Things grid -->
-  <div *ngIf="!loading && displayItems.length > 0" class="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-6 lg:grid-cols-8 gap-1">
-    <div *ngFor="let item of displayItems" 
-         class="border rounded bg-white shadow-sm overflow-hidden cursor-pointer transition-all duration-200"
-         [class.ring-2]="selectedItems.has(item.id)"
-         [class.ring-blue-500]="selectedItems.has(item.id)"
-         [class.bg-blue-50]="selectedItems.has(item.id)"
-         (click)="toggleSelection(item.id)">
-      <div class="relative">
-        <img [src]="getImageUrl(item)" alt="thing" class="w-full aspect-square object-contain bg-black" loading="lazy" />
-        <div *ngIf="selectedItems.has(item.id)" 
-             class="absolute top-1 right-1 w-4 h-4 bg-blue-600 rounded-full flex items-center justify-center">
-          <svg class="w-3 h-3 text-white" fill="currentColor" viewBox="0 0 20 20">
-            <path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd"></path>
-          </svg>
+
+  <!-- Groups Section -->
+  <div *ngIf="activeTab==='things' && groups.length > 0" class="mb-4">
+    <h3 class="text-md font-semibold text-gray-900 mb-2">Thing Groups</h3>
+    <div class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-6 lg:grid-cols-8 gap-2">
+      <div *ngFor="let g of groups" class="border rounded bg-white shadow-sm overflow-hidden cursor-pointer"
+        [class.ring-2]="selectedGroupId === g.id" [class.ring-emerald-500]="selectedGroupId === g.id"
+        (click)="toggleGroupSelection(g.id)" (dblclick)="openGroup(g.id)">
+        <div class="w-full bg-gray-50 flex items-center justify-center">
+          <img *ngIf="g.thumbnail_b64" [src]="'data:image/jpeg;base64,' + g.thumbnail_b64" alt="group thumb"
+            class="w-full object-contain aspect-square"/>
+          <div *ngIf="!g.thumbnail_b64" class="w-full h-[120px] flex items-center justify-center text-gray-400 text-sm">
+            No thumbnail</div>
+        </div>
+        <div class="p-2 text-xs text-gray-700">
+
+          <div class="flex items-center justify-between mt-1">
+            <div class="truncate text-[14px] font-medium">{{ g.name }}</div>
+            <!-- <div class="text-[12px] text-gray-500">{{ g.count }} item(s)</div> -->
+            <div class="flex items-center space-x-1">              
+              <button *ngIf="selectedGroupId === g.id" (click)="$event.stopPropagation(); openDeleteGroupModal(g)"
+                class="px-2 py-0.5 text-[11px] rounded border border-red-300 hover:bg-red-50 text-red-700">
+                Delete
+              </button>
+              <button (click)="$event.stopPropagation(); openGroup(g.id)"
+                class="px-2 py-0.5 text-[11px] rounded border border-gray-300 hover:bg-gray-50">
+                Open
+              </button>
+            </div>
+          </div>
+          <!-- <div class="text-[11px]" *ngIf="selectedGroupId === g.id">Selected</div> -->
         </div>
       </div>
-      <div class="p-2 text-xs text-gray-700">
-        <div class="font-mono text-[8px] text-gray-500 truncate">{{ item.id }}</div>
-        <div class="truncate text-[14px] font-medium">{{ item.payload?.label || '-' }}</div>
-        <!-- <div class="text-[9px] text-gray-400" *ngIf="item.payload?.source_training_id">
-          From: {{ item.payload.source_training_id.substring(0, 8) }}...
-        </div> -->
+    </div>
+  </div>
+
+
+
+
+  <!-- Tabs -->
+  
+
+  <h3 *ngIf="activeTab==='things'" class="text-md font-semibold text-gray-900 mb-2 mt-2">Ungrouped Things</h3>
+  <!-- Things grid -->
+  <div *ngIf="activeTab==='things' && !loading && displayItems.length > 0" class="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-6 lg:grid-cols-8 gap-1">
+    <app-thing-card *ngFor="let item of displayItems"
+                    [id]="item.id"
+                    [label]="item.payload?.label || '-'"
+                    [imageSrc]="getImageUrl(item)"
+                    [selected]="selectedItems.has(item.id)"
+                    (cardClick)="toggleSelection(item.id)"></app-thing-card>
+  </div>
+
+  <!-- Negatives tab content -->
+  <div *ngIf="activeTab==='negatives'" class="mt-2">
+    <div class="text-sm text-gray-600 mb-2" *ngIf="loadingNegatives">Loading negatives...</div>
+    <div class="text-sm text-gray-500" *ngIf="!loadingNegatives && negatives.length === 0">No negatives</div>
+    <div class="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-6 lg:grid-cols-8 gap-1">
+      <div *ngFor="let obj of negatives" class="border rounded bg-white p-1 flex flex-col items-center">
+        <img [src]="getNegativeImageUrl(obj)" alt="negative" class="w-full aspect-square object-contain bg-black rounded" />
+        <button class="mt-1 px-2 py-0.5 text-[10px] rounded border border-red-300 bg-white hover:bg-red-50 text-red-700"
+                (click)="removeNegative(obj)">Remove</button>
       </div>
     </div>
   </div>
-  
   <!-- Loading indicators -->
-  <div *ngIf="loading" class="text-center py-8">
+  <div *ngIf="activeTab==='things' && loading" class="text-center py-8">
     <div class="text-sm text-gray-500">Loading things...</div>
   </div>
-  
-  <div *ngIf="loadingMore" class="text-center py-4">
+
+  <div *ngIf="activeTab==='things' && loadingMore" class="text-center py-4">
     <div class="text-sm text-gray-500">Loading more...</div>
   </div>
-  
+
   <!-- Infinite scroll trigger element -->
-  <div id="infinite-scroll-trigger" class="h-4"></div>
-  
-  <div *ngIf="!hasMoreDisplayData && !loading && displayItems.length > 0" class="text-center py-4">
+  <div *ngIf="activeTab==='things'" id="infinite-scroll-trigger" class="h-4"></div>
+
+  <div *ngIf="activeTab==='things' && !hasMoreDisplayData && !loading && displayItems.length > 0" class="text-center py-4">
     <div class="text-sm text-gray-500" *ngIf="searchQuery.length < 2">All things loaded ({{ items.length }} total)</div>
-    <div class="text-sm text-gray-500" *ngIf="searchQuery.length >= 2">All search results loaded ({{ searchResults.length }} total)</div>
+    <div class="text-sm text-gray-500" *ngIf="searchQuery.length >= 2">All search results loaded ({{
+      searchResults.length }} total)</div>
+  </div>
+
+  
+</div>
+
+<!-- Edit Crop Modal -->
+<div *ngIf="showEditCrop" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+  <div class="bg-white rounded-lg p-4 w-full max-w-5xl mx-4 max-h-[90vh] overflow-y-auto">
+    <div class="flex items-center justify-between mb-3">
+      <h3 class="text-lg font-semibold text-gray-900">Edit Crop</h3>
+      <button (click)="closeEditCropModal()" class="text-gray-400 hover:text-gray-600">
+        <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
+        </svg>
+      </button>
+    </div>
+    <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+      <div>
+        <div class="text-sm text-gray-600 mb-1">Full Frame</div>
+        <div class="relative w-full" (mousemove)="onBboxPointerMove($event)" (mouseup)="endBboxDrag()"
+          (mouseleave)="endBboxDrag()">
+          <img [src]="editFullImageUrl" alt="full" class="w-full bg-black" (load)="onFullImageLoad($event)" />
+          <div *ngIf="hasEditBBox" class="absolute cursor-move" [ngStyle]="getBboxOverlayStyle()"
+            (mousedown)="startBboxDrag($event)">
+            <!-- Resize handles -->
+            <div
+              class="absolute w-3 h-3 bg-white border border-emerald-600 -top-2 left-1/2 -translate-x-1/2 cursor-n-resize"
+              (mousedown)="startBboxResize('n', $event)"></div>
+            <div
+              class="absolute w-3 h-3 bg-white border border-emerald-600 -bottom-2 left-1/2 -translate-x-1/2 cursor-s-resize"
+              (mousedown)="startBboxResize('s', $event)"></div>
+            <div
+              class="absolute w-3 h-3 bg-white border border-emerald-600 top-1/2 -right-2 -translate-y-1/2 cursor-e-resize"
+              (mousedown)="startBboxResize('e', $event)"></div>
+            <div
+              class="absolute w-3 h-3 bg-white border border-emerald-600 top-1/2 -left-2 -translate-y-1/2 cursor-w-resize"
+              (mousedown)="startBboxResize('w', $event)"></div>
+            <div class="absolute w-3 h-3 bg-white border border-emerald-600 -top-2 -right-2 cursor-ne-resize"
+              (mousedown)="startBboxResize('ne', $event)"></div>
+            <div class="absolute w-3 h-3 bg-white border border-emerald-600 -top-2 -left-2 cursor-nw-resize"
+              (mousedown)="startBboxResize('nw', $event)"></div>
+            <div class="absolute w-3 h-3 bg-white border border-emerald-600 -bottom-2 -right-2 cursor-se-resize"
+              (mousedown)="startBboxResize('se', $event)"></div>
+            <div class="absolute w-3 h-3 bg-white border border-emerald-600 -bottom-2 -left-2 cursor-sw-resize"
+              (mousedown)="startBboxResize('sw', $event)"></div>
+          </div>
+        </div>
+      </div>
+      <div>
+        <div class="text-sm text-gray-600 mb-1">BBox</div>
+        <div class="grid grid-cols-2 gap-2 text-sm">
+          <label class="flex items-center">x1 <input type="number" [(ngModel)]="editBBox.x1"
+              class="ml-2 border rounded px-2 py-1 w-full"></label>
+          <label class="flex items-center">y1 <input type="number" [(ngModel)]="editBBox.y1"
+              class="ml-2 border rounded px-2 py-1 w-full"></label>
+          <label class="flex items-center">x2 <input type="number" [(ngModel)]="editBBox.x2"
+              class="ml-2 border rounded px-2 py-1 w-full"></label>
+          <label class="flex items-center">y2 <input type="number" [(ngModel)]="editBBox.y2"
+              class="ml-2 border rounded px-2 py-1 w-full"></label>
+        </div>
+      </div>
+    </div>
+    <div class="flex justify-end mt-4 space-x-3">
+      <button (click)="closeEditCropModal()"
+              [disabled]="savingCrop"
+              class="px-4 py-2 text-sm text-gray-700 bg-gray-100 rounded disabled:opacity-50 disabled:cursor-not-allowed">Cancel</button>
+      <button (click)="saveEditCrop()"
+              [disabled]="savingCrop"
+              class="px-4 py-2 text-sm text-white bg-amber-600 rounded disabled:opacity-50 disabled:cursor-not-allowed flex items-center">
+        <svg *ngIf="savingCrop" class="animate-spin -ml-1 mr-2 h-4 w-4 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+          <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+          <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+        </svg>
+        {{ savingCrop ? 'Saving...' : 'Save' }}
+      </button>
+    </div>
+  </div>
+</div>
+
+<!-- Group Details Modal -->
+<div *ngIf="showGroupModal" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+  <div class="bg-white rounded-lg p-6 w-full max-w-5xl mx-4 max-h-[85vh] overflow-y-auto">
+    <div class="flex items-center justify-between mb-4">
+      <h3 class="text-lg font-semibold text-gray-900">{{ activeGroup?.name || 'Group' }}</h3>
+      <button (click)="closeGroupModal()" class="text-gray-400 hover:text-gray-600">
+        <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
+        </svg>
+      </button>
+    </div>
+    <div *ngIf="groupLoading" class="text-sm text-gray-500">Loading group...</div>
+    <div *ngIf="!groupLoading && activeGroup" class="space-y-3">
+      <div class="text-sm text-gray-600">{{ activeGroup.count }} item(s)</div>
+      <div class="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-6 lg:grid-cols-8 gap-1">
+        <div *ngFor="let item of activeGroup.items" class="border rounded bg-white shadow-sm overflow-hidden">
+          <div class="relative">
+            <img [src]="getImageUrl(item)" alt="thing" class="w-full aspect-square object-contain bg-black" />
+          </div>
+          <div class="p-2 text-xs text-gray-700">
+            <div class="font-mono text-[8px] text-gray-500 truncate">{{ item.id }}</div>
+            <div class="truncate text-[14px] font-medium">{{ item.payload.label || '-' }}</div>
+          </div>
+        </div>
+      </div>
+    </div>
   </div>
 </div>
 
@@ -155,7 +334,7 @@
         </svg>
       </button>
     </div>
-    
+
     <div class="mb-4">
       <div class="flex items-center mb-2">
         <div class="w-3 h-3 rounded-full mr-2 bg-red-500"></div>
@@ -175,17 +354,20 @@
     </div>
 
     <div class="flex justify-end space-x-3">
-      <button (click)="closeDeleteAllModal()" 
-              class="px-4 py-2 text-sm font-medium text-gray-700 bg-gray-100 border border-gray-300 rounded-md hover:bg-gray-200 focus:outline-none focus:ring-2 focus:ring-gray-500"
-              [disabled]="isDeletingAll">
+      <button (click)="closeDeleteAllModal()"
+        class="px-4 py-2 text-sm font-medium text-gray-700 bg-gray-100 border border-gray-300 rounded-md hover:bg-gray-200 focus:outline-none focus:ring-2 focus:ring-gray-500"
+        [disabled]="isDeletingAll">
         Cancel
       </button>
-      <button (click)="confirmDeleteAll()" 
-              class="px-4 py-2 text-sm font-medium text-white bg-red-600 border border-transparent rounded-md hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-red-500 disabled:opacity-50 flex items-center"
-              [disabled]="isDeletingAll">
-        <svg *ngIf="isDeletingAll" class="animate-spin -ml-1 mr-2 h-4 w-4 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+      <button (click)="confirmDeleteAll()"
+        class="px-4 py-2 text-sm font-medium text-white bg-red-600 border border-transparent rounded-md hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-red-500 disabled:opacity-50 flex items-center"
+        [disabled]="isDeletingAll">
+        <svg *ngIf="isDeletingAll" class="animate-spin -ml-1 mr-2 h-4 w-4 text-white" xmlns="http://www.w3.org/2000/svg"
+          fill="none" viewBox="0 0 24 24">
           <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
-          <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+          <path class="opacity-75" fill="currentColor"
+            d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z">
+          </path>
         </svg>
         {{ isDeletingAll ? 'Deleting...' : 'Delete All Things' }}
       </button>
@@ -197,7 +379,7 @@
 <div *ngIf="showEditLabelModal" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
   <div class="bg-white rounded-lg p-6 w-full max-w-2xl mx-4 max-h-[80vh] overflow-y-auto">
     <h3 class="text-lg font-semibold text-gray-900 mb-4">Edit Label</h3>
-    
+
     <!-- Selected items preview -->
     <div class="mb-4">
       <div class="text-sm text-gray-600 mb-2">{{ editingItems.length }} item(s) selected:</div>
@@ -208,36 +390,83 @@
         </div>
       </div>
     </div>
-    
+
     <!-- Label input -->
     <div class="mb-4">
       <label class="block text-sm font-medium text-gray-700 mb-2">New Label</label>
-      <input 
-        type="text" 
-        [(ngModel)]="editLabelText" 
-        placeholder="Enter new label for selected items"
+      <input type="text" [(ngModel)]="editLabelText" placeholder="Enter new label for selected items"
         class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-        (keyup.enter)="saveLabel()"
-      />
+        (keyup.enter)="saveLabel()" />
     </div>
-    
+
     <!-- Modal actions -->
     <div class="flex justify-end space-x-3">
-      <button 
-        (click)="closeEditLabelModal()" 
-        [disabled]="savingLabel"
+      <button (click)="closeEditLabelModal()" [disabled]="savingLabel"
         class="px-4 py-2 text-sm font-medium text-gray-700 bg-gray-100 hover:bg-gray-200 rounded-md disabled:opacity-50 disabled:cursor-not-allowed">
         Cancel
       </button>
-      <button 
-        (click)="saveLabel()" 
-        [disabled]="!editLabelText.trim() || savingLabel"
+      <button (click)="saveLabel()" [disabled]="!editLabelText.trim() || savingLabel"
         class="px-4 py-2 text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 rounded-md disabled:opacity-50 disabled:cursor-not-allowed flex items-center">
-        <svg *ngIf="savingLabel" class="animate-spin -ml-1 mr-2 h-4 w-4 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+        <svg *ngIf="savingLabel" class="animate-spin -ml-1 mr-2 h-4 w-4 text-white" xmlns="http://www.w3.org/2000/svg"
+          fill="none" viewBox="0 0 24 24">
           <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
-          <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+          <path class="opacity-75" fill="currentColor"
+            d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z">
+          </path>
         </svg>
         {{ savingLabel ? 'Saving...' : 'Save Label' }}
+      </button>
+    </div>
+  </div>
+</div>
+
+<!-- Delete Group Confirmation Modal -->
+<div *ngIf="groupToDelete" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+  <div class="bg-white rounded-lg p-6 w-full max-w-md mx-4">
+    <div class="flex items-center justify-between mb-4">
+      <h3 class="text-lg font-semibold text-gray-900">Delete Group</h3>
+      <button (click)="closeDeleteGroupModal()" class="text-gray-400 hover:text-gray-600" [disabled]="deletingGroup">
+        <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
+        </svg>
+      </button>
+    </div>
+
+    <div class="mb-4">
+      <div class="flex items-center mb-2">
+        <div class="w-3 h-3 rounded-full mr-2 bg-red-500"></div>
+        <span class="text-sm font-medium text-gray-900">Warning: This action cannot be undone</span>
+      </div>
+      <p class="text-sm text-gray-600 mb-3">
+        Are you sure you want to delete the group <strong>"{{ groupToDelete.name }}"</strong>?
+      </p>
+      <p class="text-sm text-gray-600 mb-3">
+        This will:
+      </p>
+      <ul class="text-sm text-gray-600 list-disc list-inside mb-3 space-y-1">
+        <li>Delete the group from the system</li>
+        <li>Move all items in the group to "Ungrouped Things"</li>
+        <li>Preserve all items and their labels</li>
+      </ul>
+    </div>
+
+    <div class="flex justify-end space-x-3">
+      <button (click)="closeDeleteGroupModal()"
+        class="px-4 py-2 text-sm font-medium text-gray-700 bg-gray-100 border border-gray-300 rounded-md hover:bg-gray-200 focus:outline-none focus:ring-2 focus:ring-gray-500"
+        [disabled]="deletingGroup">
+        Cancel
+      </button>
+      <button (click)="confirmDeleteGroup()"
+        class="px-4 py-2 text-sm font-medium text-white bg-red-600 border border-transparent rounded-md hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-red-500 disabled:opacity-50 flex items-center"
+        [disabled]="deletingGroup">
+        <svg *ngIf="deletingGroup" class="animate-spin -ml-1 mr-2 h-4 w-4 text-white" xmlns="http://www.w3.org/2000/svg"
+          fill="none" viewBox="0 0 24 24">
+          <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+          <path class="opacity-75" fill="currentColor"
+            d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z">
+          </path>
+        </svg>
+        {{ deletingGroup ? 'Deleting...' : 'Delete Group' }}
       </button>
     </div>
   </div>

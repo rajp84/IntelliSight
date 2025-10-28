@@ -1,0 +1,66 @@
+<div class="space-y-4">
+  <div class="flex items-center justify-between">
+    <h1 class="text-xl font-semibold text-gray-800">Jobs</h1>
+    <button class="px-3 py-1.5 rounded bg-blue-600 text-white text-sm hover:bg-blue-700 disabled:opacity-50" (click)="refresh()" [disabled]="loading">
+      {{ loading ? 'Refreshing…' : 'Refresh' }}
+    </button>
+  </div>
+
+  <div class="overflow-auto bg-white border border-gray-200 rounded">
+    <table class="min-w-full text-sm">
+      <thead class="bg-gray-50 text-gray-600">
+        <tr>
+          <th class="text-left px-3 py-2">Job ID</th>
+          <th class="text-left px-3 py-2">Media File</th>
+          <th class="text-left px-3 py-2">Type</th>
+          <th class="text-left px-3 py-2">Status</th>
+          <th class="text-left px-3 py-2">Progress</th>
+          <th class="text-left px-3 py-2">Model</th>
+          <th class="text-left px-3 py-2">Started</th>
+          <th class="text-left px-3 py-2">Completed</th>
+          <th class="text-left px-3 py-2">Actions</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr *ngFor="let j of items" class="border-t border-gray-100">
+          <td class="px-3 py-2 font-mono">{{ j.job_id }}</td>
+          <td class="px-3 py-2 truncate max-w-[400px]" title="{{ j.media_file }}">{{ j.media_file.split('/').pop() }}</td>
+          <td class="px-3 py-2">{{ j.type || 'process' }}</td>
+          <td class="px-3 py-2">
+            <span class="px-2 py-0.5 text-xs rounded border"
+              [class.bg-gray-100]="j.status === 'accepted' || j.status === 'queued'"
+              [class.bg-blue-100]="j.status === 'running'"
+              [class.bg-green-100]="j.status === 'completed'"
+              [class.bg-red-100]="j.status === 'failed'">
+              {{ j.status }}
+            </span>
+          </td>
+          <td class="px-3 py-2 w-[300px]">
+            <div class="flex items-center gap-3">
+              <div class="min-w-[160px] w-full bg-gray-100 rounded h-2 overflow-hidden">
+                <div class="bg-blue-600 h-2" [style.width.%]="j.progress || 0"></div>
+              </div>
+              <img *ngIf="j.status === 'running' && j.preview" [src]="j.preview" alt="preview" class="w-[80px] h-auto border rounded" />
+            </div>
+            <div class="text-xs text-gray-600 mt-1">
+              {{ (j.progress || 0) | number:'1.0-0' }}%
+              <span *ngIf="j.status === 'running' && j.frames_processed !== undefined && j.total_frames" class="text-gray-400">(frame {{ j.frames_processed }}/{{ j.total_frames }})</span>
+            </div>
+          </td>
+          <td class="px-3 py-2 truncate max-w-[280px]" title="{{ j.model_path }}">{{ j.model_name || j.model_path }}</td>
+          <td class="px-3 py-2">{{ j.started_at | date:'short' }}</td>
+          <td class="px-3 py-2">{{ j.completed_at | date:'short' }}</td>
+          <td class="px-3 py-2 space-x-2">
+            <a *ngIf="j.status !== 'running'" [routerLink]="['/jobs', j.job_id]" class="px-2 py-1 text-xs rounded bg-indigo-600 text-white hover:bg-indigo-700">Open</a>
+            <button class="px-2 py-1 text-xs rounded bg-red-600 text-white hover:bg-red-700 disabled:opacity-50" (click)="delete(j)" [disabled]="deleting[j.job_id]">{{ deleting[j.job_id] ? 'Deleting…' : 'Delete' }}</button>
+          </td>
+        </tr>
+        <tr *ngIf="!items?.length && !loading">
+          <td colspan="9" class="px-3 py-6 text-center text-gray-500">No jobs yet</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+</div>
+
+

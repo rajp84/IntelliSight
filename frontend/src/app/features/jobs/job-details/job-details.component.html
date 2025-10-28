@@ -1,0 +1,136 @@
+<!-- Error panel at bottom when job failed -->
+<div *ngIf="job?.status === 'failed' && job?.error" class="mb-3 p-3 border border-red-300 bg-red-50 rounded">
+  <div class="text-sm font-semibold text-red-700 mb-1">Job failed</div>
+  <pre class="text-xs text-red-800 whitespace-pre-wrap break-words">{{ job.error }}</pre>
+  <div class="text-[11px] text-red-600 mt-1" *ngIf="job?.failed_at">Failed at: {{ job.failed_at }}</div>
+  <!-- <div class="text-[11px] text-gray-500" *ngIf="job?.model_name">Model: {{ job.model_name }}</div> -->
+</div>
+
+<div class="grid grid-cols-1 lg:grid-cols-4 gap-4">
+  <div class="col-span-2">
+    <div class="relative">
+      <video #video el controls class="w-full bg-black" (loadedmetadata)="onVideoMeta()" (timeupdate)="onTimeUpdate()" (play)="onPlay()" (pause)="onPause()"></video>
+      <canvas #overlay class="absolute left-0 top-0 pointer-events-none"></canvas>
+    </div>
+    <!-- Timeline for tracks currently in frame -->
+    <div class="mt-2 p-2 bg-gray-100 border">
+      <div class="text-xs text-gray-600 mb-1">Tracks in frame (by duration)</div>
+      <div class="grid grid-cols-[140px_1fr] gap-2 items-start">
+        <!-- Labels column -->
+        <div #timelineLabels class="relative bg-white border rounded overflow-auto no-scrollbar h-24">
+          <div class="relative" [style.height.px]="timelineHeightPx">
+            <ng-container *ngFor="let t of currentTracks; let i = index">
+              <div class="absolute left-1 text-[11px] text-gray-700" [style.top.px]="i*14">{{ t.display }}</div>
+            </ng-container>
+          </div>
+        </div>
+        <!-- Bars column -->
+        <div class="relative bg-white border rounded h-24">
+          <!-- Overlay pinned to container (not scrolling) -->
+          <div class="absolute inset-0 pointer-events-none z-10">
+            <div class="absolute left-0 top-0 h-full w-px bg-gray-300"></div>
+            <div class="absolute right-0 top-0 h-full w-px bg-gray-300"></div>
+            <!-- Playhead (full visible height) -->
+            <div class="absolute top-0 bottom-0 w-[2px] bg-red-500" [style.left.%]="playheadLeftPct"></div>
+          </div>
+          <!-- Scrollable content underneath -->
+          <div #timelineBars class="absolute inset-0 overflow-auto no-scrollbar" (scroll)="onTimelineScroll()">
+            <div class="relative" [style.height.px]="timelineHeightPx">
+            <ng-container *ngFor="let t of currentTracks; let i = index">
+              <ng-container *ngIf="t.segments?.length; else singleBar">
+                <div *ngFor="let seg of t.segments" class="absolute h-2 rounded" [style.top.px]="2 + i*14"
+                     [style.left.%]="seg.leftPct" [style.width.%]="seg.widthPct"
+                     [style.backgroundColor]="t.color" title="{{t.display}}"></div>
+              </ng-container>
+              <ng-template #singleBar>
+                <div class="absolute h-2 rounded" [style.top.px]="2 + i*14"
+                     [style.left.%]="t.leftPct" [style.width.%]="t.widthPct"
+                     [style.backgroundColor]="t.color" title="{{t.display}}"></div>
+              </ng-template>
+            </ng-container>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <!-- Confidence slider under timeline (hide for similarity_search) -->
+    <div *ngIf="job?.type !== 'similarity_search'" class="mt-2 p-2 bg-white border rounded flex items-center gap-3">
+      <label class="text-xs text-gray-600">Confidence</label>
+      <input type="range" min="0" max="1" step="0.01" [value]="conf" (input)="onConfChange($event)" class="w-64" />
+      <span class="text-xs text-gray-800 font-mono">{{ conf | number:'1.2-2' }}</span>
+    </div>
+  </div>
+  <div class="space-y-3" [ngClass]="{'col-span-2': job?.type !== 'similarity_search'}">
+
+    <div #list class="h-[70vh] overflow-auto border" (scroll)="onListScroll()" (wheel)="onUserScroll()" (touchmove)="onUserScroll()" (keydown)="onUserKey($event)" tabindex="0">
+      <div *ngFor="let f of frames" #rowRef class="p-2 border-b hover:bg-gray-50" [attr.data-frame]="f.i"
+           [class.bg-yellow-50]="f.i === currentFrame" [class.ring-1]="f.i === currentFrame" [class.ring-yellow-400]="f.i === currentFrame">
+        <div class="flex items-center justify-between gap-2">
+          <div class="flex-1 min-w-0 cursor-pointer" (click)="seekToFrame(f)">
+            <div class="text-xs text-gray-600" *ngIf="job?.type !== 'similarity_search'">Frame {{ f.i }} | {{ f.t }} ms | {{ f.o?.length || 0 }} dets</div>
+            <div class="text-xs text-gray-600" *ngIf="job?.type === 'similarity_search'">
+              Frame {{ f.i }} | {{ f.t }} ms
+              <span *ngIf="similarityItems(f)?.length"> | {{ similarityItems(f).length }} matches</span>
+            </div>
+          </div>
+          <div *ngIf="job?.type === 'detection'" class="shrink-0 flex items-center gap-2">
+            <button class="px-2 py-0.5 text-[11px] rounded border text-gray-700 hover:bg-gray-100"
+                    (click)="toggleFrameInvalid(f)">{{ f.invalid ? 'Mark Valid' : 'Mark Invalid' }}</button>
+            <button class="px-2 py-0.5 text-[11px] rounded border text-gray-700 hover:bg-gray-100"
+                    (click)="openFixCrop(f)">Fix Crop</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Similarity results panel -->
+<div *ngIf="job?.type === 'similarity_search'" class="p-2 bg-white border overflow-auto h-[70vh]">
+  <h3 class="text-sm font-semibold mb-2">Matches for current frame</h3>
+  <div class="grid gap-3 grid-cols-1 ">
+    <div *ngFor="let r of currentSimilarityResults" class="border rounded p-2 flex items-center gap-2">
+      <div class="w-14 h-14 bg-gray-100 rounded overflow-hidden flex items-center justify-center">
+        <img *ngIf="r.thumbUrl" [src]="r.thumbUrl" alt="thumb" class="w-full h-full object-cover" />
+        <span *ngIf="!r.thumbUrl" class="text-[10px] text-gray-400">no image</span>
+      </div>
+      <div class="min-w-0">
+        <div class="text-xs font-medium truncate" [title]="r.label">{{ r.label }}</div>
+        <div class="text-[11px] text-gray-600">Score: {{ r.score | number:'1.2-2' }}</div>
+      </div>
+    </div>
+  </div>
+  <div *ngIf="!currentSimilarityResults.length" class="text-xs text-gray-500">No matches for this frame.</div>
+  <!-- <div class="text-[11px] text-gray-400 mt-2">Scores shown are search scores.</div> -->
+</div>
+
+<!-- Crop Editor Modal -->
+<div *ngIf="showCrop" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+  <div class="bg-white rounded-lg p-4 w-full max-w-3xl mx-4">
+    <h3 class="text-sm font-semibold mb-2">Fix Crop</h3>
+    <div class="mb-2 flex items-center gap-2">
+      <label class="text-xs text-gray-600">Label</label>
+      <input type="text" [(ngModel)]="cropLabel" placeholder="object"
+             class="px-2 py-1 text-xs border rounded" [disabled]="savingCrop" />
+      <div class="text-[11px] text-gray-500" *ngIf="cropBox">x1: {{cropBox.x1}}, y1: {{cropBox.y1}}, x2: {{cropBox.x2}}, y2: {{cropBox.y2}}</div>
+    </div>
+    <app-crop-editor [imageUrl]="cropImageUrl || ''" [bbox]="cropBox" (bboxChange)="cropBox = $event"></app-crop-editor>
+    <div class="mt-3 flex justify-end gap-2">
+      <button class="px-3 py-1.5 text-sm rounded border" (click)="cancelCrop()" [disabled]="savingCrop">Cancel</button>
+      <button class="px-3 py-1.5 text-sm rounded bg-blue-600 text-white flex items-center gap-2" (click)="confirmCrop()" [disabled]="!cropBox || !cropLabel || savingCrop">
+        <svg *ngIf="savingCrop" class="animate-spin -ml-1 mr-1 h-4 w-4 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+          <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+          <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+        </svg>
+        <span>{{ savingCrop ? 'Saving...' : 'Save' }}</span>
+      </button>
+    </div>
+  </div>
+  
+</div>
+</div>
+
+
+<!-- <div class="flex items-center justify-between">
+    <button class="px-2 py-1 text-xs rounded bg-blue-600 text-white" (click)="loadMore()" [disabled]="loading">Load More</button>
+  </div> -->
+

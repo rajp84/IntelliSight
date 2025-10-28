@@ -5,6 +5,10 @@ import os
 import importlib
 from typing import List, Tuple, Optional
 
+import numpy as np
+import tensorrt as trt  # type: ignore
+import pycuda.driver as cuda  # type: ignore
+
 from PIL import Image
 import torch
 from transformers import AutoProcessor, AutoModelForCausalLM
@@ -136,7 +140,7 @@ def parse_od_output(od_out: dict) -> tuple[list[Tuple[float, float, float, float
     return boxes, labels, scores
 
 
-# ---------------- TensorRT / ONNX Runtime EP helpers -----------------
+# ---------------- TensorRT / ONNX Runtime helpers -----------------
 
 def _export_vision_tower_onnx(model, onnx_path: str, input_shape: tuple[int, int, int, int], opset: int = 17) -> None:
     class VTWrapper(torch.nn.Module):
@@ -171,7 +175,6 @@ def _monkeypatch_vision_tower_with_ort(model, ort_session):
     device = next(model.parameters()).device
 
     def forward_features_unpool_ort(x: torch.Tensor):
-        import numpy as np
         x_np = x.detach().to(dtype=vt_dtype).contiguous().cpu().numpy()
         outputs = ort_session.run(None, {"pixel_values": x_np})
         feats = outputs[0]
@@ -182,8 +185,6 @@ def _monkeypatch_vision_tower_with_ort(model, ort_session):
 
 
 def _np_from_trt_dtype(dtype):
-    import numpy as np
-    import tensorrt as trt  # type: ignore
     if dtype == trt.DataType.FLOAT:
         return np.float32
     if dtype == trt.DataType.HALF:
@@ -195,9 +196,6 @@ def _np_from_trt_dtype(dtype):
 
 class _TrtRunner:
     def __init__(self, engine, input_shape):
-        import tensorrt as trt  # type: ignore
-        import pycuda.driver as cuda  # type: ignore
-        import numpy as np
         self.engine = engine
         self.context = engine.create_execution_context()
         self.stream = cuda.Stream()
@@ -217,8 +215,6 @@ class _TrtRunner:
         self.bindings = [int(self.d_in), int(self.d_out)]
 
     def __call__(self, x: torch.Tensor) -> torch.Tensor:
-        import pycuda.driver as cuda  # type: ignore
-        import numpy as np
         if x.dim() == 3:
             x = x.unsqueeze(0)
         outputs = []
@@ -246,7 +242,6 @@ def _monkeypatch_vision_tower_with_trt(model, engine, input_shape):
 
 
 def _build_trt_engine_for_vision_tower(model, engine_path: str, input_shape, fp16: bool, opset: int):
-    import tensorrt as trt  # type: ignore
     logger = trt.Logger(trt.Logger.WARNING)
     onnx_path = engine_path + ".onnx"
     _export_vision_tower_onnx(model, onnx_path, input_shape, opset)
@@ -270,7 +265,6 @@ def _build_trt_engine_for_vision_tower(model, engine_path: str, input_shape, fp1
 
 
 def _load_trt_engine(engine_path: str):
-    import tensorrt as trt  # type: ignore
     logger = trt.Logger(trt.Logger.WARNING)
     with open(engine_path, "rb") as f, trt.Runtime(logger) as runtime:
         engine = runtime.deserialize_cuda_engine(f.read())
@@ -293,10 +287,10 @@ def enable_trt_vision(
 
     Returns True if enabled, False otherwise.
     """
-    # Native TensorRT path disabled by request; always use ONNX Runtime providers
-    logging.getLogger(__name__).info("Native TensorRT path disabled; attempting ONNX Runtime providers")
+    
+    #logging.getLogger(__name__).info("Native TensorRT path disabled; attempting ONNX Runtime providers")
 
-    # Fallback: ONNX Runtime with TRT/CUDA EP
+    # ONNX Runtime with TRT/CUDA EP
     try:
         ort = importlib.import_module("onnxruntime")
         providers = ort.get_available_providers()

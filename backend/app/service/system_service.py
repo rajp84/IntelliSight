@@ -3,6 +3,7 @@ from __future__ import annotations
 from typing import Any, Dict, List
 import asyncio
 import psutil
+import os
 try:
     import GPUtil
 except Exception: 
@@ -40,6 +41,9 @@ _DEFAULT_CONFIG: Dict[str, Any] = {
     "florence_model": "microsoft/Florence-2-large",
     "dinov3_model": "facebook/dinov3-vitb16-pretrain-lvd1689m",
     "dinov3_dimension": 768,
+    # Optional fields used by various features
+    "default_model": "",
+    "roboflow_api_key": "",
 }
 
 
@@ -82,8 +86,7 @@ def get_configuration() -> Dict[str, Any]:
     if not doc:
         # No config yet; return defaults with environment variable fallback
         config = dict(_DEFAULT_CONFIG)
-        # Check for Hugging Face token in environment variables
-        import os
+        # Check for Hugging Face token in environment variables        
         if os.environ.get("HUGGINGFACE_HUB_TOKEN"):
             config["hf_token"] = os.environ.get("HUGGINGFACE_HUB_TOKEN")
         return config
@@ -98,8 +101,7 @@ def get_configuration() -> Dict[str, Any]:
         dinov3_model = doc.get("dinov3_model", _DEFAULT_CONFIG["dinov3_model"])
         dinov3_dimension = get_dinov3_dimension(dinov3_model)
         
-        # Check for Hugging Face token in environment variables as fallback
-        import os
+        # Check for Hugging Face token in environment variables as fallback        
         hf_token = doc.get("hf_token", _DEFAULT_CONFIG["hf_token"])
         if not hf_token and os.environ.get("HUGGINGFACE_HUB_TOKEN"):
             hf_token = os.environ.get("HUGGINGFACE_HUB_TOKEN")
@@ -112,6 +114,9 @@ def get_configuration() -> Dict[str, Any]:
             "dinov3_model": dinov3_model,
             "dinov3_dimension": dinov3_dimension,
             "training_params": tp,
+            # pass-through optional fields
+            "default_model": doc.get("default_model", _DEFAULT_CONFIG.get("default_model")),
+            "roboflow_api_key": doc.get("roboflow_api_key", _DEFAULT_CONFIG.get("roboflow_api_key")),
         }
     # Ensure defaults for missing nested fields
     merged_tp: Dict[str, Any] = dict(_DEFAULT_TRAINING_PARAMS)
@@ -120,8 +125,7 @@ def get_configuration() -> Dict[str, Any]:
     dinov3_model = doc.get("dinov3_model", _DEFAULT_CONFIG["dinov3_model"])
     dinov3_dimension = get_dinov3_dimension(dinov3_model)
     
-    # Check for Hugging Face token in environment variables as fallback
-    import os
+    # Check for Hugging Face token in environment variables as fallback    
     hf_token = doc.get("hf_token", _DEFAULT_CONFIG["hf_token"])
     if not hf_token and os.environ.get("HUGGINGFACE_HUB_TOKEN"):
         hf_token = os.environ.get("HUGGINGFACE_HUB_TOKEN")
@@ -134,6 +138,9 @@ def get_configuration() -> Dict[str, Any]:
         "dinov3_model": dinov3_model,
         "dinov3_dimension": dinov3_dimension,
         "training_params": merged_tp,
+        # pass-through optional fields
+        "default_model": doc.get("default_model", _DEFAULT_CONFIG.get("default_model")),
+        "roboflow_api_key": doc.get("roboflow_api_key", _DEFAULT_CONFIG.get("roboflow_api_key")),
     }
 
 
