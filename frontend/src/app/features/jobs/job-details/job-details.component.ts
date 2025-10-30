@@ -21,6 +21,7 @@ export class JobDetailsComponent implements OnInit {
   afterIdx = -1;
   loading = false;
   job: any = null;
+  mediaSrc: string = '';
   conf: number = 0.6;
   currentFrame = -1;
   private prefetchThresholdFrames = 128;
@@ -47,7 +48,8 @@ export class JobDetailsComponent implements OnInit {
   cropLabel: string = '';
   savingCrop = false;
 
-  @ViewChild('video', { static: true }) videoRef!: ElementRef<HTMLVideoElement>;
+  @ViewChild('video', { static: false }) videoRef!: ElementRef<HTMLVideoElement>;
+  @ViewChild('image', { static: false }) imageRef!: ElementRef<HTMLImageElement>;
   @ViewChild('overlay', { static: true }) canvasRef!: ElementRef<HTMLCanvasElement>;
   @ViewChild('list', { static: true }) listRef!: ElementRef<HTMLDivElement>;
   @ViewChildren('rowRef') rowRefs!: QueryList<ElementRef<HTMLDivElement>>;
@@ -58,10 +60,8 @@ export class JobDetailsComponent implements OnInit {
       this.job = job;
       const jconf = Number(job?.conf);
       if (isFinite(jconf) && jconf >= 0 && jconf <= 1) this.conf = jconf;
-      const video = this.videoRef.nativeElement;
       if (this.job?.job_id) {
-        // Stream via backend endpoint that supports range requests
-        video.src = `/api/process/jobs/${encodeURIComponent(this.job.job_id)}/media`;
+        this.mediaSrc = `/api/process/jobs/${encodeURIComponent(this.job.job_id)}/media`;
       }
     });
     this.loadMore();
@@ -79,6 +79,12 @@ export class JobDetailsComponent implements OnInit {
       if (curFrame) this.drawDetections(curFrame);
     }
     this.buildAllTracks();
+  }
+
+  get isImage(): boolean {
+    const tf = Number(this.job?.total_frames || 0);
+    const fps = Number(this.job?.fps || 0);
+    return tf === 1 || fps <= 0;
   }
 
   loadMore(): void {
@@ -107,25 +113,31 @@ export class JobDetailsComponent implements OnInit {
   onPause(): void { this.isPlaying = false; }
 
   seekToFrame(f: any): void {
-    const video = this.videoRef.nativeElement;
-    if (!video || !this.job) return;
-    // Prefer timestamp t (ms) to sync; fallback to fps/index if t missing
-    let timeSec = Number(f?.t ?? 0) / 1000;
-    if (!isFinite(timeSec) || timeSec < 0) {
-      const fps = Number(this.job?.fps || 0);
-      timeSec = fps > 0 ? (Number(f?.i || 0) / fps) : 0;
+    if (!this.job) return;
+    if (!this.isImage) {
+      const video = this.videoRef?.nativeElement;
+      if (!video) return;
+      // Prefer timestamp t (ms) to sync; fallback to fps/index if t missing
+      let timeSec = Number(f?.t ?? 0) / 1000;
+      if (!isFinite(timeSec) || timeSec < 0) {
+        const fps = Number(this.job?.fps || 0);
+        timeSec = fps > 0 ? (Number(f?.i || 0) / fps) : 0;
+      }
+      try {
+        video.currentTime = timeSec;
+      } catch {}
+      setTimeout(() => this.drawDetections(f), 30);
+    } else {
+      // Image: just draw detections for the single frame
+      setTimeout(() => this.drawDetections(f), 0);
     }
-    try {
-      video.currentTime = timeSec;
-    } catch {}
-    setTimeout(() => this.drawDetections(f), 30);
     this.currentFrame = Number(f?.i || -1);
     this.scrollIntoView(this.currentFrame);
   }
 
   private drawDetections(f: any): void {
     const canvas = this.canvasRef.nativeElement;
-    const video = this.videoRef.nativeElement;
+    const video = this.videoRef?.nativeElement;
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
     this.syncCanvasSize();
@@ -173,6 +185,16 @@ export class JobDetailsComponent implements OnInit {
     }
   }
 
+  onImageLoad(): void {
+    // When the image element finishes loading, size the overlay and render first frame
+    this.syncCanvasSize();
+    const first = this.frames?.[0];
+    if (first) {
+      this.currentFrame = Number(first?.i || -1);
+      this.drawDetections(first);
+    }
+  }
+
   similarityItems(f: any): Array<{ label: string; score: number }> {
     if (!f) return [];
     const items = Array.isArray(f?.o) ? f.o : [];
@@ -209,7 +231,7 @@ export class JobDetailsComponent implements OnInit {
     const imageId = item?.img_id || meta?.image_id || meta?.id;
     if (typeof imageId === 'string' && imageId) {
       const filename = encodeURIComponent(`${imageId}.jpg`);
-      return `/api/train/things/image/${filename}`;
+      return `/api/things/image/${filename}`;
     }
     if (!meta) return undefined;
     // Prefer explicit URLs
@@ -226,10 +248,13 @@ export class JobDetailsComponent implements OnInit {
   }
 
   private syncCanvasSize(): void {
-    const video = this.videoRef.nativeElement;
+    const mediaEl = this.isImage ? (this.imageRef?.nativeElement as HTMLElement | undefined) : (this.videoRef?.nativeElement as HTMLElement | undefined);
     const canvas = this.canvasRef.nativeElement;
-    const w = Math.max(1, Math.floor(video.clientWidth || video.videoWidth || 0));
-    const h = Math.max(1, Math.floor(video.clientHeight || video.videoHeight || 0));
+    if (!mediaEl) return;
+    // Prefer client box; fallback to intrinsic sizes
+    const anyEl: any = mediaEl as any;
+    const w = Math.max(1, Math.floor(mediaEl.clientWidth || anyEl.videoWidth || anyEl.naturalWidth || 0));
+    const h = Math.max(1, Math.floor(mediaEl.clientHeight || anyEl.videoHeight || anyEl.naturalHeight || 0));
     // Set drawing buffer size
     if (canvas.width !== w) canvas.width = w;
     if (canvas.height !== h) canvas.height = h;
@@ -319,21 +344,30 @@ export class JobDetailsComponent implements OnInit {
         near = this.findNearestFrameByIndex(approxIndex);
       }
       if (near) {
-        const video = this.videoRef.nativeElement;
-        try { video.pause(); } catch {}
-        // Seek by timestamp t (ms), fallback to fps/index
-        let timeSec = Number(near.t ?? 0) / 1000;
-        if (!isFinite(timeSec) || timeSec < 0) {
-          const fps = Number(this.job?.fps || 0);
-          timeSec = fps > 0 ? (Number(near.i || 0) / fps) : 0;
+        if (!this.isImage) {
+          const video = this.videoRef?.nativeElement;
+          if (video) {
+            try { video.pause(); } catch {}
+            // Seek by timestamp t (ms), fallback to fps/index
+            let timeSec = Number(near.t ?? 0) / 1000;
+            if (!isFinite(timeSec) || timeSec < 0) {
+              const fps = Number(this.job?.fps || 0);
+              timeSec = fps > 0 ? (Number(near.i || 0) / fps) : 0;
+            }
+            try { video.currentTime = timeSec; } catch {}
+            this.currentFrame = Number(near.i || -1);
+            this.drawDetections(near);
+            const curMs = Math.round(timeSec * 1000);
+            this.updatePlayhead(curMs);
+            this.ensureTimelineTrackVisible(curMs);
+          }
+        } else {
+          this.currentFrame = Number(near.i || -1);
+          this.drawDetections(near);
+          const curMs = Number(near.t ?? 0);
+          this.updatePlayhead(isFinite(curMs) ? curMs : 0);
+          this.ensureTimelineTrackVisible(isFinite(curMs) ? curMs : 0);
         }
-        try { video.currentTime = timeSec; } catch {}
-        this.currentFrame = Number(near.i || -1);
-        this.drawDetections(near);
-        // Update playhead and center active track in the timeline immediately
-        const curMs = Math.round(timeSec * 1000);
-        this.updatePlayhead(curMs);
-        this.ensureTimelineTrackVisible(curMs);
       }
     }
   }

@@ -12,6 +12,7 @@ import cv2
 import torch
 import numpy as np
 from PIL import Image
+import requests
 from ultralytics import YOLO
 from ultralytics import RTDETR
 
@@ -493,6 +494,11 @@ class ObjectDetection(Job):
                 pass
         finally:
             cap.release()
+            # Build results and post callback (best-effort)
+            try:
+                await asyncio.to_thread(self._post_completion_callback, job_id)
+            except Exception:
+                pass
 
     async def _run_inference_batch(self, frames: List[Image.Image]) -> List[tuple[List[Dict[str, Any]], Any]]:
         # Run inference using Ultralytics YOLO and return (lean detections, det_array Nx5 pixels)
@@ -606,5 +612,194 @@ class ObjectDetection(Job):
             union = area_a + area_b - inter
             ious[i,:] = np.where(union > 0, inter / union, 0.0)
         return ious
+
+    # --- Callback helpers ---
+    def _post_completion_callback(self, job_id: str) -> None:
+        try:
+            coll_jobs = get_collection("jobs")
+            job_doc = coll_jobs.find_one({"job_id": job_id}, {"callback_url": 1, "fps": 1, "frame_width": 1, "frame_height": 1, "model_path": 1, "model_name": 1}) or {}
+            callback_url = str(job_doc.get("callback_url") or "").strip()
+            if not callback_url:
+                return
+            results = self._build_results(job_id=job_id, fps=float(job_doc.get("fps") or 0.0), frame_w=int(job_doc.get("frame_width") or 0), frame_h=int(job_doc.get("frame_height") or 0), model_name=str(job_doc.get("model_name") or ""), model_path=str(job_doc.get("model_path") or ""))
+            payload = {
+                "job_id": job_id,
+                "progress": 100,
+                "status": "Finished",
+                "result": results,
+            }
+            try:
+                logger.info(f"Posting callback to {callback_url} with payload: {payload}")
+                requests.post(callback_url, json=payload, timeout=10)
+            except Exception as e:
+                logger.error(f"Failed to post callback to {callback_url}: {e}")
+        except Exception as e:
+            logger.error(f"Failed to post callback to {callback_url}: {e}")
+            pass
+
+    def _build_results(self, *, job_id: str, fps: float, frame_w: int, frame_h: int, model_name: str, model_path: str) -> List[Dict[str, Any]]:
+        coll_fb = get_collection("frame_buckets")
+        # Prefer known dims from job doc; fall back to first block dims if missing
+        out_width = int(frame_w or 0)
+        out_height = int(frame_h or 0)
+
+        # Group detections by tracker id
+        tracks: Dict[int, Dict[str, Any]] = {}
+        try:
+            cur = coll_fb.find({"job_id": job_id}, {"frames": 1, "imgw": 1, "imgh": 1}).sort([("block_start_idx", 1)])
+        except Exception:
+            cur = []
+
+        for block in cur:
+            if out_width <= 0:
+                try:
+                    out_width = int(block.get("imgw") or out_width)
+                except Exception:
+                    pass
+            if out_height <= 0:
+                try:
+                    out_height = int(block.get("imgh") or out_height)
+                except Exception:
+                    pass
+            frames = block.get("frames") or []
+            for fr in frames:
+                try:
+                    fi = int(fr.get("i", -1))
+                except Exception:
+                    continue
+                objs = fr.get("o") or []
+                for det in objs:
+                    try:
+                        conf = float(det.get("s", 0.0))
+                    except Exception:
+                        conf = 0.0
+                    try:
+                        tid = int(det.get("k"))
+                    except Exception:
+                        # skip unmatched without stable id
+                        continue
+                    cls_name = det.get("c") or "unknown"
+                    nb = det.get("b") or [0.0, 0.0, 0.0, 0.0]
+                    try:
+                        x1 = float(nb[0]) * max(1, out_width)
+                        y1 = float(nb[1]) * max(1, out_height)
+                        x2 = float(nb[2]) * max(1, out_width)
+                        y2 = float(nb[3]) * max(1, out_height)
+                        w = max(0.0, x2 - x1)
+                        h = max(0.0, y2 - y1)
+                        # cx = x1 + (w / 2.0)
+                        # cy = y1 + (h / 2.0)
+                    except Exception:
+                        continue
+
+                    # Use persisted track span when available
+                    try:
+                        from_fi = int(det.get("from_frame", fi))
+                    except Exception:
+                        from_fi = fi
+                    try:
+                        to_fi = int(det.get("to_frame", fi))
+                    except Exception:
+                        to_fi = fi
+
+                    tr = tracks.get(tid)
+                    if tr is None:
+                        tr = {
+                            "object": cls_name,
+                            "start_frame_number": from_fi,
+                            "end_frame_number": to_fi,
+                            "detections": [],
+                        }
+                        tracks[tid] = tr
+                    else:
+                        if from_fi < tr["start_frame_number"]:
+                            tr["start_frame_number"] = from_fi
+                        if to_fi > tr["end_frame_number"]:
+                            tr["end_frame_number"] = to_fi
+                    tr["detections"].append({
+                        "confidence": f"{conf:.5f}",
+                        "x": float(x1),
+                        "y": float(y1),
+                        "x2": float(x2),
+                        "y2": float(y2),
+                        "w": float(w),
+                        "h": float(h),
+                        "height": int(out_height or 0),
+                        "width": int(out_width or 0),
+                        "object": cls_name,
+                    })
+
+        model_id = model_name or (os.path.basename(model_path) if model_path else str(self.model_path or ""))
+
+        results: List[Dict[str, Any]] = []
+        for tr in tracks.values():
+            sf = int(tr.get("start_frame_number", 0))
+            ef = int(tr.get("end_frame_number", sf))
+            if fps and fps > 0:
+                start_ms = int((sf / fps) * 1000.0)
+                end_ms = int((ef / fps) * 1000.0)
+            else:
+                start_ms = 0
+                end_ms = 0
+            # Merge all per-frame boxes into one encompassing bbox
+            x_min = None
+            y_min = None
+            x_max = None
+            y_max = None
+            max_conf = 0.0
+            for d in tr.get("detections", []) or []:
+                try:
+                    x1 = float(d.get("x", 0.0))
+                    y1 = float(d.get("y", 0.0))
+                    # Prefer x2/y2 if present; fallback to x+w/y+h
+                    if d.get("x2") is not None and d.get("y2") is not None:
+                        x2 = float(d.get("x2"))
+                        y2 = float(d.get("y2"))
+                    else:
+                        w = float(d.get("w", 0.0))
+                        h = float(d.get("h", 0.0))
+                        x2 = x1 + max(0.0, w)
+                        y2 = y1 + max(0.0, h)
+                    c = float(d.get("confidence", 0.0)) if isinstance(d.get("confidence"), (int, float)) else float(str(d.get("confidence", "0")).strip() or 0.0)
+                except Exception:
+                    continue
+                x_min = x1 if x_min is None else min(x_min, x1)
+                y_min = y1 if y_min is None else min(y_min, y1)
+                x_max = x2 if x_max is None else max(x_max, x2)
+                y_max = y2 if y_max is None else max(y_max, y2)
+                if c > max_conf:
+                    max_conf = c
+
+            if x_min is None or y_min is None or x_max is None or y_max is None:
+                # No valid boxes; skip
+                continue
+
+            # Skip whole track if its maximum confidence never reaches threshold
+            if max_conf < 0.5:
+                continue
+
+            merged_det = {
+                "confidence": f"{max_conf:.5f}",
+                "x": float(x_min),
+                "y": float(y_min),
+                "w": float(max(0.0, x_max - x_min)),
+                "h": float(max(0.0, y_max - y_min)),
+                "height": int(out_height or 0),
+                "width": int(out_width or 0),
+                "object": tr.get("object"),
+            }
+
+            results.append({
+                "start": start_ms,
+                "end": end_ms,
+                "start_frame_number": sf,
+                "end_frame_number": ef,
+                "object": tr.get("object"),
+                "model_id": model_id,
+                "detections": [merged_det],
+                "sub_items": [],
+            })
+
+        return results
 
 

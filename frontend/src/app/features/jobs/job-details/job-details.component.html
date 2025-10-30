@@ -9,7 +9,9 @@
 <div class="grid grid-cols-1 lg:grid-cols-4 gap-4">
   <div class="col-span-2">
     <div class="relative">
-      <video #video el controls class="w-full bg-black" (loadedmetadata)="onVideoMeta()" (timeupdate)="onTimeUpdate()" (play)="onPlay()" (pause)="onPause()"></video>
+      <video *ngIf="!isImage" #video el controls class="w-full bg-black" [src]="mediaSrc"
+             (loadedmetadata)="onVideoMeta()" (timeupdate)="onTimeUpdate()" (play)="onPlay()" (pause)="onPause()"></video>
+      <img *ngIf="isImage" #image class="w-full bg-black object-contain" [src]="mediaSrc" (load)="onImageLoad()" />
       <canvas #overlay class="absolute left-0 top-0 pointer-events-none"></canvas>
     </div>
     <!-- Timeline for tracks currently in frame -->

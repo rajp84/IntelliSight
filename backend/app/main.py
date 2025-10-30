@@ -43,18 +43,21 @@ from .api.train_model.routes import router as train_model_router
 from .api.things.routes import router as things_router
 from .api.models.routes import router as models_router
 from .api.process.routes import router as process_router
+from .api.callback.routes import router as callback_router
 from .database.connection_manager import init_connections, start_monitor, shutdown
 from .service.system_service import start_system_stats_broadcast
 from .workers.process_worker import get_worker
 
 ROUTER_PREFIX = "/api"
-fastapi_app.include_router(base_router, prefix=ROUTER_PREFIX)
+fastapi_app.include_router(base_router, prefix="/health")
 fastapi_app.include_router(system_router, prefix=ROUTER_PREFIX + "/system")
 fastapi_app.include_router(train_router, prefix=ROUTER_PREFIX + "/train")
 fastapi_app.include_router(train_model_router, prefix=ROUTER_PREFIX + "/train-model")
 fastapi_app.include_router(process_router, prefix=ROUTER_PREFIX + "/process")
+fastapi_app.include_router(process_router, prefix="/process")
 fastapi_app.include_router(things_router, prefix=ROUTER_PREFIX + "/things")
 fastapi_app.include_router(models_router, prefix=ROUTER_PREFIX + "/models")
+fastapi_app.include_router(callback_router, prefix=ROUTER_PREFIX + "/callback")
 
 # ---- Startup/Shutdown: DB Connections ----
 @fastapi_app.on_event("startup")
@@ -95,7 +98,7 @@ if static_dir.exists():
 # but if you want explicit fallback, you can add the below.)
 @fastapi_app.middleware("http")
 async def spa_fallback(request: Request, call_next):
-    if request.url.path.startswith("/api"):
+    if request.url.path.startswith("/api") or request.url.path.startswith("/process") or request.url.path.startswith("/health"):
         return await call_next(request)
     response = await call_next(request)
     # If not found by StaticFiles, send index.html so Angular router can handle it

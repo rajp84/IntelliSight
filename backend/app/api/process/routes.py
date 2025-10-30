@@ -4,7 +4,7 @@ from typing import Any, Dict, List
 from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import JSONResponse, StreamingResponse
 from pydantic import BaseModel, HttpUrl
-
+from ...service.system_service import get_configuration
 from ...service.process_service import (
     accept_job as svc_accept_job,
     list_jobs as svc_list_jobs,
@@ -32,7 +32,10 @@ class MediaFileRequest(BaseModel):
 async def process_media(request: MediaFileRequest):
     media_path = Path(request.media_file)
     if not media_path.exists():
-        raise HTTPException(status_code=404, detail="Media file not found")
+        cfg = get_configuration()
+        media_path = Path(f"{cfg.get('library_path')}/{request.media_file}")
+        if not media_path.exists():
+            raise HTTPException(status_code=404, detail="Media file not found")        
 
     job_type = (request.type or "detection").strip() if isinstance(request.type, str) else "detection"
     if job_type not in {"detection", "similarity_search", "find_anything"}:
