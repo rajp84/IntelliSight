@@ -579,7 +579,7 @@ export class ThingsComponent implements OnInit, OnDestroy, AfterViewInit {
       this.editBBox = { x1: 0, y1: 0, x2: 0, y2: 0 };
     }
     this.editEmbeddingId = id;
-    this.editFullImageUrl = `/api/train/things/image/${encodeURIComponent(imageId)}_full.jpg`;
+    this.editFullImageUrl = `/api/things/image/${encodeURIComponent(imageId)}_full.jpg`;
     this.showEditCrop = true;
   }
 

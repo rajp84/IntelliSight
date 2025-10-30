@@ -25,6 +25,7 @@ class SimilaritySearch(Job):
         self.threshold: float = float(threshold if threshold is not None else (cfg.get("similarity_threshold") or 0.7))
         self.batch_size: int = int(batch_size or 4)
         self.collection_name: str = str(cfg.get("similarity_collection") or cfg.get("things_collection") or "things")
+        self.top_k: int = 5
         # Ensure embedder is warm
         try:
             if not is_model_loaded():
@@ -118,7 +119,7 @@ class SimilaritySearch(Job):
                     except Exception:
                         preview_b64 = None
                 emb = embed_image(pil)
-                results = search_embeddings(self.collection_name, [emb], top_k=3) or []
+                results = search_embeddings(self.collection_name, [emb], top_k=self.top_k) or []
             except Exception:
                 results = []
 
@@ -137,6 +138,7 @@ class SimilaritySearch(Job):
                         score = float(dist)
                         # Extract payload/metadata
                         meta = None
+                        img_id = None
                         try:
                             ent = getattr(hit, 'entity', None)
                             if ent is not None:
@@ -151,9 +153,6 @@ class SimilaritySearch(Job):
                                     meta = payload_val
                         except Exception:
                             meta = None
-                        # Keep only if score >= threshold (higher is better)
-                        if not (score >= float(self.threshold)):
-                            continue
                         label = None
                         if isinstance(meta, dict):
                             label = meta.get('label') or meta.get('name') or meta.get('filename')

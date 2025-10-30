@@ -154,7 +154,7 @@ export class ThingGroupComponent implements OnInit {
       .getThingGroup(this.group.id)
       .subscribe({ complete: () => {} });
     // Call backend to update thumbnail
-    fetch(`/api/train/things/groups/${encodeURIComponent(this.group.id)}/thumbnail`, {
+    fetch(`/api/things/groups/${encodeURIComponent(this.group.id)}/thumbnail`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ image_id: imageId }),

@@ -17,6 +17,13 @@
         <div class="flex items-center gap-2">
           <span *ngIf="defaultModel===it.name" class="text-[11px] text-emerald-700 border border-emerald-300 rounded px-1">default</span>
           <button class="px-2 py-1 text-[11px] rounded border" (click)="setDefault(it)" [disabled]="defaultModel===it.name">Set Default</button>
+          <button *ngIf="defaultModel!==it.name" class="px-2 py-1 text-[11px] rounded border text-red-600 border-red-300" (click)="deleteModel(it)">
+            
+            <svg class="h-3 w-3 text-red-700" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path>
+            </svg>
+            
+          </button>
         </div>
       </div>
     </div>
@@ -48,12 +55,72 @@
         </select>
       </div>
     </div>
-    <div class="mt-3">
+    <!-- <div class="mt-3">
       <button class="px-3 py-1.5 text-sm rounded bg-blue-600 text-white disabled:opacity-50" (click)="download()" [disabled]="downloading || !rfWorkspace || !rfProject || !rfVersion">
         {{ downloading ? 'Downloading…' : 'Download Model' }}
       </button>
+    </div> -->
+
+
+    <!-- <div class="grid grid-cols-1 md:grid-cols-3 gap-3">
+      <div>
+        <label class="block text-xs text-gray-600 mb-1">Format</label>
+        <select class="border rounded px-2 py-1 text-sm w-full" [(ngModel)]="datasetFormat">
+          <option value="yolov8">YOLOv8</option>
+          <option value="yolov5">YOLOv5</option>
+          <option value="coco">COCO</option>
+          <option value="voc">VOC</option>
+          <option value="tfrecord">TFRecord</option>
+          <option value="folder">Folder</option>
+          <option value="clip">Clip</option>
+        </select>
+      </div>
+    </div> -->
+    <div class="mt-3 flex items-center gap-2">
+      <button class="px-3 py-1.5 text-sm rounded bg-indigo-600 text-white disabled:opacity-50" (click)="downloadDataset()" [disabled]="datasetDownloading || !rfWorkspace || !rfProject || !rfVersion">
+        {{ datasetDownloading ? 'Downloading…' : 'Download Dataset' }}
+      </button>
+      <button class="px-2 py-1 text-[11px] rounded border" (click)="refreshDatasets()">Refresh Datasets</button>
+    </div>
+
+    <div *ngIf="datasetDownloading" class="mt-2">
+      <div class="text-[11px] text-gray-600 mb-1">Downloading dataset…</div>
+      <div class="progress-bar"></div>
+    </div>
+
+    <div class="mt-3">
+      <div class="text-xs text-gray-700 mb-1">Local Datasets</div>
+      <div *ngIf="!datasets.length" class="text-[11px] text-gray-500">No datasets found in /app/media/dataset</div>
+      <div class="divide-y">
+        <div *ngFor="let d of datasets" class="py-2 flex items-center justify-between gap-3">
+          <div class="min-w-0">
+            <div class="text-sm font-mono truncate" [title]="d.name">{{ d.name }}</div>
+            <div class="text-[11px] text-gray-500">{{ d.size }} bytes</div>
+            <div *ngIf="importStatusText && importing && currentImportPath && d?.path === currentImportPath" class="text-[11px] text-indigo-700 mt-1">
+              {{ importStatusText }}
+              <span *ngIf="importProgressPct !== null"> ({{ importProgressPct }}%)</span>
+            </div>
+          </div>
+          <div class="shrink-0 flex items-center gap-2">
+            <button class="px-2 py-1 text-[11px] rounded border" (click)="importDataset(d)" [disabled]="importing">
+              {{ importing ? 'Importing…' : 'Import' }}
+            </button>
+            <button class="px-2 py-1 text-[11px] rounded border text-red-600 border-red-300" (click)="deleteDataset(d)">
+              <svg class="h-3 w-3 text-red-700" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path>
+              </svg>
+            </button>
+          </div>
+        </div>
+      </div>
     </div>
   </div>
 </div>
+
+
+  <!-- <div class="border rounded p-3 bg-white">
+    <div class="text-sm text-gray-700 mb-2">Roboflow Dataset</div>
+    
+  </div> -->
 
 
