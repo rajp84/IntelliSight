@@ -1,5 +1,6 @@
 from pathlib import Path
 from typing import Any, Dict, List
+import uuid
 
 from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import JSONResponse, StreamingResponse
@@ -41,6 +42,10 @@ async def process_media(request: MediaFileRequest):
     if job_type not in {"detection", "similarity_search", "find_anything"}:
         job_type = "detection"
 
+    if not request.job_id:
+        request.job_id = "sim-" if job_type == "similarity_search" else "fa-" if job_type == "find_anything" else "od-"
+        request.job_id += str(uuid.uuid4())
+        
     try:
         svc_accept_job(request.job_id, media_path, str(request.callback_url), job_type)
     except Exception:

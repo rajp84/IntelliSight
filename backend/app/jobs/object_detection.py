@@ -12,7 +12,6 @@ import cv2
 import torch
 import numpy as np
 from PIL import Image
-import requests
 from ultralytics import YOLO
 from ultralytics import RTDETR
 
@@ -492,13 +491,10 @@ class ObjectDetection(Job):
             except Exception:
                 logger.error(f"Failed to update track spans for job: {job_id}")
                 pass
+        except Exception:
+            raise
         finally:
             cap.release()
-            # Build results and post callback (best-effort)
-            try:
-                await asyncio.to_thread(self._post_completion_callback, job_id)
-            except Exception:
-                pass
 
     async def _run_inference_batch(self, frames: List[Image.Image]) -> List[tuple[List[Dict[str, Any]], Any]]:
         # Run inference using Ultralytics YOLO and return (lean detections, det_array Nx5 pixels)
@@ -612,30 +608,6 @@ class ObjectDetection(Job):
             union = area_a + area_b - inter
             ious[i,:] = np.where(union > 0, inter / union, 0.0)
         return ious
-
-    # --- Callback helpers ---
-    def _post_completion_callback(self, job_id: str) -> None:
-        try:
-            coll_jobs = get_collection("jobs")
-            job_doc = coll_jobs.find_one({"job_id": job_id}, {"callback_url": 1, "fps": 1, "frame_width": 1, "frame_height": 1, "model_path": 1, "model_name": 1}) or {}
-            callback_url = str(job_doc.get("callback_url") or "").strip()
-            if not callback_url:
-                return
-            results = self._build_results(job_id=job_id, fps=float(job_doc.get("fps") or 0.0), frame_w=int(job_doc.get("frame_width") or 0), frame_h=int(job_doc.get("frame_height") or 0), model_name=str(job_doc.get("model_name") or ""), model_path=str(job_doc.get("model_path") or ""))
-            payload = {
-                "job_id": job_id,
-                "progress": 100,
-                "status": "Finished",
-                "result": results,
-            }
-            try:
-                logger.info(f"Posting callback to {callback_url} with payload: {payload}")
-                requests.post(callback_url, json=payload, timeout=10)
-            except Exception as e:
-                logger.error(f"Failed to post callback to {callback_url}: {e}")
-        except Exception as e:
-            logger.error(f"Failed to post callback to {callback_url}: {e}")
-            pass
 
     def _build_results(self, *, job_id: str, fps: float, frame_w: int, frame_h: int, model_name: str, model_path: str) -> List[Dict[str, Any]]:
         coll_fb = get_collection("frame_buckets")

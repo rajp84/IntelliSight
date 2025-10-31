@@ -13,6 +13,7 @@ from ..jobs.object_detection import ObjectDetection
 from ..jobs.similarity_search import SimilaritySearch
 from ..jobs.find_anything import FindAnything
 from ..socket.socket_manager import broadcast
+import requests
 
 
 logger = logging.getLogger(__name__)
@@ -239,6 +240,11 @@ class ProcessWorker:
                     })
                 except Exception:
                     pass
+                # Best-effort success callback for any job type
+                try:
+                    await asyncio.to_thread(self._post_completion_callback, job_id, handler)
+                except Exception:
+                    pass
                 logger.info("Worker %d processed job %s (%s)", worker_index, job_id, media_file)
             except Exception as ex:
                 try:
@@ -258,10 +264,75 @@ class ProcessWorker:
                     })
                 except Exception:
                     pass
+                # Best-effort error callback for any job type
+                try:
+                    await asyncio.to_thread(self._post_error_callback, job_id)
+                except Exception:
+                    pass
                 logger.error("Worker %d job failed: %s", worker_index, ex)
             finally:
                 current_job_id = None
 
+    # Callback helpers
+    
+    def _post_completion_callback(self, job_id: str, handler: Job) -> None:
+        try:
+            coll_jobs = get_collection("jobs")
+            job_doc = coll_jobs.find_one({"job_id": job_id}, {"callback_url": 1, "fps": 1, "frame_width": 1, "frame_height": 1, "model_path": 1, "model_name": 1}) or {}
+            callback_url = str(job_doc.get("callback_url") or "").strip()
+            if not callback_url:
+                return
+            # Build results via handler if available
+            results: List[Dict[str, Any]] = []
+            try:
+                build = getattr(handler, "_build_results", None)
+                if callable(build):
+                    results = build(
+                        job_id=job_id,
+                        fps=float(job_doc.get("fps") or 0.0),
+                        frame_w=int(job_doc.get("frame_width") or 0),
+                        frame_h=int(job_doc.get("frame_height") or 0),
+                        model_name=str(job_doc.get("model_name") or ""),
+                        model_path=str(job_doc.get("model_path") or ""),
+                    ) or []
+            except Exception:
+                results = []
+            payload = {
+                "job_id": job_id,
+                "progress": 100,
+                "status": "Finished",
+                "result": results,
+            }
+            try:
+                logger.info(f"Posting callback to {callback_url} with payload: {payload}")
+                requests.post(callback_url, json=payload, timeout=10)
+            except Exception as e:
+                logger.error(f"Failed to post callback to {callback_url}: {e}")
+        except Exception as e:
+            logger.error(f"Failed to post callback: {e}")
+            pass
+
+    def _post_error_callback(self, job_id: str) -> None:
+        try:
+            coll_jobs = get_collection("jobs")
+            job_doc = coll_jobs.find_one({"job_id": job_id}, {"callback_url": 1}) or {}
+            callback_url = str(job_doc.get("callback_url") or "").strip()
+            if not callback_url:
+                return
+            payload = {
+                "job_id": job_id,
+                "progress": 100,
+                "status": "Failed",
+                "result": [],
+            }
+            try:
+                logger.info(f"Posting error callback to {callback_url} with payload: {payload}")
+                requests.post(callback_url, json=payload, timeout=10)
+            except Exception as e:
+                logger.error(f"Failed to post error callback to {callback_url}: {e}")
+        except Exception as e:
+            logger.error(f"Failed to post error callback: {e}")
+            pass
 
 # Singleton accessor for app lifecycle
 _worker: Optional[ProcessWorker] = None
