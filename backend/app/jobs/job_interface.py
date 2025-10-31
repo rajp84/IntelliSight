@@ -5,11 +5,14 @@ from typing import Optional
 from datetime import datetime
 import asyncio
 import logging
-from ..database.mongo import update_one
+import requests
+from ..database.mongo import update_one, get_collection
 from ..socket.socket_manager import broadcast
 
 logger = logging.getLogger(__name__)
+
 class Job(ABC):
+    
     @abstractmethod
     async def process(self, job_id: str, media_path: str) -> None:
         pass
@@ -76,5 +79,23 @@ def update_job_progress(
         except Exception as e:
             logger.error(f"Error in update_job_progress for job {job_id}: {e}")
             pass
+
+    # Best-effort callback
+    try:
+        coll_jobs = get_collection("jobs")
+        job_doc = coll_jobs.find_one({"job_id": job_id}, {"callback_url": 1}) or {}
+        callback_url = str(job_doc.get("callback_url") or "").strip()
+        if callback_url:
+            cb_payload = {
+                "job_id": job_id,
+                "status": "Started",
+                "progress": int(progress_pct),
+            }
+            try:
+                requests.post(callback_url, json=cb_payload, timeout=5)
+            except Exception:
+                pass
+    except Exception:
+        pass
 
 

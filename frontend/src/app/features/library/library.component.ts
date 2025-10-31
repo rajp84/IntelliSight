@@ -120,7 +120,7 @@ export class LibraryComponent {
 
   startProcess(type: 'detection' | 'similarity_search' | 'find_anything'): void {
     if (!this.selectedFileRelPath) return;
-    const jobId = this.generateJobId(type === 'detection' ? 'job' : (type === 'similarity_search' ? 'sim' : 'fa'));
+    const jobId = this.generateJobId(type === 'detection' ? 'od' : (type === 'similarity_search' ? 'sim' : 'fa'));
     const mediaFullPath = this.libraryRoot ? `${this.libraryRoot.replace(/\\/g,'/')}/${this.selectedFileRelPath}` : this.selectedFileRelPath;
     const body: any = {
       job_id: jobId,

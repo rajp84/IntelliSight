@@ -1,6 +1,6 @@
 services:
   intellisight-app:
-    image: 832471001844.dkr.ecr.us-east-1.amazonaws.com/aiplus/intellisight:0.1.5
+    image: 832471001844.dkr.ecr.us-east-1.amazonaws.com/aiplus/intellisight:0.1.6
     container_name: intellisight-app
     ports:
       - "5001:5001"
